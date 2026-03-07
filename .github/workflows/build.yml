@@ -254,6 +254,16 @@ jobs:
           fi
           echo "platform=${patched_platform}" >> $GITHUB_OUTPUT
 
+      - name: Enable updater artifacts for signed release
+        if: inputs.sign-binaries
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = 'src-tauri/tauri.conf.json';
+          const c = fs.readFileSync(path, 'utf8');
+          fs.writeFileSync(path, c.replace('\"createUpdaterArtifacts\": false', '\"createUpdaterArtifacts\": true'));
+          "
+
       - name: Build with Tauri
         uses: tauri-apps/tauri-action@v0
         env:

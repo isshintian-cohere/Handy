@@ -15,7 +15,7 @@ bun run tauri dev
 # If cmake error on macOS:
 CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
 
-# Build for production
+# Build for production (no code-signing key required for local builds; createUpdaterArtifacts is false)
 bun run tauri build
 
 # Linting and formatting (run before committing)
