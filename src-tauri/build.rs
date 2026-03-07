@@ -140,16 +140,25 @@ fn build_apple_intelligence_bridge() {
     .trim()
     .to_string();
 
+    // Prefer stub when explicitly disabled (e.g. company laptop with Apple Intelligence disabled)
+    let force_stub = env::var("HANDY_DISABLE_APPLE_INTELLIGENCE").is_ok_and(|v| {
+        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
+    });
+
     // Check if the SDK supports FoundationModels (required for Apple Intelligence)
     let framework_path =
         Path::new(&sdk_path).join("System/Library/Frameworks/FoundationModels.framework");
-    let has_foundation_models = framework_path.exists();
+    let has_foundation_models = framework_path.exists() && !force_stub;
 
     let source_file = if has_foundation_models {
         println!("cargo:warning=Building with Apple Intelligence support.");
         REAL_SWIFT_FILE
     } else {
-        println!("cargo:warning=Apple Intelligence SDK not found. Building with stubs.");
+        if force_stub {
+            println!("cargo:warning=Apple Intelligence disabled by HANDY_DISABLE_APPLE_INTELLIGENCE. Building with stubs.");
+        } else {
+            println!("cargo:warning=Apple Intelligence SDK not found. Building with stubs.");
+        }
         STUB_SWIFT_FILE
     };
 
@@ -178,6 +187,9 @@ fn build_apple_intelligence_bridge() {
     // Use macOS 11.0 as deployment target for compatibility
     // The @available(macOS 26.0, *) checks in Swift handle runtime availability
     // Weak linking for FoundationModels is handled via cargo:rustc-link-arg below
+    let mut current_source = source_file;
+    let mut used_stub_fallback = false;
+
     let status = Command::new("xcrun")
         .args([
             "swiftc",
@@ -189,7 +201,7 @@ fn build_apple_intelligence_bridge() {
             "-import-objc-header",
             BRIDGE_HEADER,
             "-c",
-            source_file,
+            current_source,
             "-o",
             object_path
                 .to_str()
@@ -198,8 +210,36 @@ fn build_apple_intelligence_bridge() {
         .status()
         .expect("Failed to invoke swiftc for Apple Intelligence bridge");
 
+    // If real implementation failed (e.g. FoundationModelsMacros plugin not found on restricted systems), fall back to stub
+    let status = if !status.success() && current_source == REAL_SWIFT_FILE {
+        println!("cargo:warning=Apple Intelligence Swift build failed (e.g. macro plugin unavailable). Building with stubs.");
+        used_stub_fallback = true;
+        current_source = STUB_SWIFT_FILE;
+        Command::new("xcrun")
+            .args([
+                "swiftc",
+                "-target",
+                "arm64-apple-macosx11.0",
+                "-sdk",
+                &sdk_path,
+                "-O",
+                "-import-objc-header",
+                BRIDGE_HEADER,
+                "-c",
+                current_source,
+                "-o",
+                object_path
+                    .to_str()
+                    .expect("Failed to convert object path to string"),
+            ])
+            .status()
+            .expect("Failed to invoke swiftc for Apple Intelligence stub")
+    } else {
+        status
+    };
+
     if !status.success() {
-        panic!("swiftc failed to compile {source_file}");
+        panic!("swiftc failed to compile {current_source}");
     }
 
     let status = Command::new("libtool")

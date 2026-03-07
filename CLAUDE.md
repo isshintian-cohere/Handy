@@ -32,6 +32,8 @@ mkdir -p src-tauri/resources/models
 curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
 ```
 
+**Apple Intelligence (macOS):** On Apple Silicon Macs the build may try to compile the Apple Intelligence (FoundationModels) bridge. If that fails (e.g. company laptop with Apple Intelligence disabled or macro plugin unavailable), the build script automatically falls back to stubs so the app still builds; the Apple Intelligence provider will report as unavailable at runtime. To force stub build and skip the real implementation, set `HANDY_DISABLE_APPLE_INTELLIGENCE=1` before building.
+
 ## Architecture Overview
 
 Handy is a cross-platform desktop speech-to-text app built with Tauri 2.x (Rust backend + React/TypeScript frontend).
