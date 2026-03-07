@@ -32,6 +32,7 @@ struct ChatCompletionRequest {
     response_format: Option<ResponseFormat>,
 }
 
+/// OpenAI-style response: choices[].message.content
 #[derive(Debug, Deserialize)]
 struct ChatCompletionResponse {
     choices: Vec<ChatChoice>,
@@ -45,6 +46,31 @@ struct ChatChoice {
 #[derive(Debug, Deserialize)]
 struct ChatMessageResponse {
     content: Option<String>,
+}
+
+/// Cohere v2 Chat API response: message.content is array of { type, text }
+#[derive(Debug, Deserialize)]
+struct CohereChatResponse {
+    message: CohereMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereMessage {
+    content: CohereContent,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum CohereContent {
+    Array(Vec<CohereContentBlock>),
+    String(String),
+}
+
+#[derive(Debug, Deserialize)]
+struct CohereContentBlock {
+    #[serde(rename = "type")]
+    block_type: Option<String>,
+    text: Option<String>,
 }
 
 /// Build headers for API requests based on provider type
@@ -117,7 +143,12 @@ pub async fn send_chat_completion_with_schema(
     json_schema: Option<Value>,
 ) -> Result<Option<String>, String> {
     let base_url = provider.base_url.trim_end_matches('/');
-    let url = format!("{}/chat/completions", base_url);
+    let is_cohere = base_url.contains("cohere.com");
+    let url = if is_cohere {
+        base_url.to_string()
+    } else {
+        format!("{}/chat/completions", base_url)
+    };
 
     debug!("Sending chat completion request to: {}", url);
 
@@ -164,26 +195,43 @@ pub async fn send_chat_completion_with_schema(
         .map_err(|e| format!("HTTP request failed: {}", e))?;
 
     let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .unwrap_or_else(|_| "Failed to read response".to_string());
     if !status.is_success() {
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to read error response".to_string());
         return Err(format!(
             "API request failed with status {}: {}",
-            status, error_text
+            status, response_text
         ));
     }
 
-    let completion: ChatCompletionResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse API response: {}", e))?;
-
-    Ok(completion
-        .choices
-        .first()
-        .and_then(|choice| choice.message.content.clone()))
+    if is_cohere {
+        let completion: CohereChatResponse = serde_json::from_str(&response_text)
+            .map_err(|e| format!("Failed to parse Cohere API response: {}", e))?;
+        let text = match completion.message.content {
+            CohereContent::String(s) => Some(s),
+            CohereContent::Array(blocks) => {
+                let parts: Vec<String> = blocks
+                    .into_iter()
+                    .filter_map(|b| b.text)
+                    .collect();
+                if parts.is_empty() {
+                    None
+                } else {
+                    Some(parts.join("\n"))
+                }
+            }
+        };
+        Ok(text)
+    } else {
+        let completion: ChatCompletionResponse = serde_json::from_str(&response_text)
+            .map_err(|e| format!("Failed to parse API response: {}", e))?;
+        Ok(completion
+            .choices
+            .first()
+            .and_then(|choice| choice.message.content.clone()))
+    }
 }
 
 /// Fetch available models from an OpenAI-compatible API
