@@ -1,9 +1,10 @@
-use crate::settings::PostProcessProvider;
+use crate::settings::{PostProcessProvider, COHERE_PROVIDER_ID};
 use log::debug;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use specta::Type;
 
 #[derive(Debug, Serialize)]
 struct ChatMessage {
@@ -37,6 +38,12 @@ struct ChatCompletionRequest {
 pub struct CohereThinkingOptions {
     pub enabled: bool,
     pub token_budget: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type)]
+pub struct PostProcessModelCapabilities {
+    pub supports_thinking: bool,
+    pub supports_token_budget: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,10 +110,8 @@ fn is_cohere_host(url: &Url) -> bool {
     )
 }
 
-pub fn is_cohere_v2_chat_url(base_url: &str) -> bool {
-    Url::parse(base_url)
-        .map(|url| is_cohere_host(&url) && url.path().trim_end_matches('/') == "/v2/chat")
-        .unwrap_or(false)
+fn is_cohere_provider(provider: &PostProcessProvider) -> bool {
+    provider.id == COHERE_PROVIDER_ID || crate::settings::is_cohere_v2_chat_url(&provider.base_url)
 }
 
 fn cohere_models_url(base_url: &str) -> Option<String> {
@@ -116,9 +121,36 @@ fn cohere_models_url(base_url: &str) -> Option<String> {
     }
 
     url.set_path("/v1/models");
-    url.set_query(None);
+    {
+        let mut query = url.query_pairs_mut();
+        query.clear();
+        query.append_pair("endpoint", "chat");
+        query.append_pair("page_size", "1000");
+    }
     url.set_fragment(None);
     Some(url.to_string())
+}
+
+fn cohere_model_capabilities(model: &str) -> PostProcessModelCapabilities {
+    match model {
+        "command-a-reasoning-08-2025" => PostProcessModelCapabilities {
+            supports_thinking: true,
+            supports_token_budget: true,
+        },
+        "command-a-03-2025" => PostProcessModelCapabilities::default(),
+        _ => PostProcessModelCapabilities::default(),
+    }
+}
+
+pub fn get_post_process_model_capabilities(
+    provider: &PostProcessProvider,
+    model: &str,
+) -> PostProcessModelCapabilities {
+    if is_cohere_provider(provider) {
+        cohere_model_capabilities(model)
+    } else {
+        PostProcessModelCapabilities::default()
+    }
 }
 
 /// Build headers for API requests based on provider type
@@ -202,7 +234,7 @@ pub async fn send_chat_completion_with_schema(
     cohere_thinking: Option<CohereThinkingOptions>,
 ) -> Result<Option<String>, String> {
     let base_url = provider.base_url.trim_end_matches('/');
-    let is_cohere = is_cohere_v2_chat_url(base_url);
+    let is_cohere = is_cohere_provider(provider);
     let url = if is_cohere {
         base_url.to_string()
     } else {
@@ -248,6 +280,7 @@ pub async fn send_chat_completion_with_schema(
         response_format,
     };
     let response = if is_cohere {
+        let capabilities = get_post_process_model_capabilities(provider, model);
         if has_json_schema {
             debug!("Ignoring OpenAI structured output schema for Cohere request");
         }
@@ -255,18 +288,25 @@ pub async fn send_chat_completion_with_schema(
         let request_body = CohereChatRequest {
             model: model.to_string(),
             messages: request_body.messages,
-            thinking: cohere_thinking.map(|options| CohereThinkingRequest {
-                thinking_type: if options.enabled {
-                    "enabled".to_string()
-                } else {
-                    "disabled".to_string()
-                },
-                token_budget: if options.enabled && options.token_budget > 0 {
-                    Some(options.token_budget)
-                } else {
-                    None
-                },
-            }),
+            thinking: if capabilities.supports_thinking {
+                cohere_thinking.map(|options| CohereThinkingRequest {
+                    thinking_type: if options.enabled {
+                        "enabled".to_string()
+                    } else {
+                        "disabled".to_string()
+                    },
+                    token_budget: if options.enabled
+                        && capabilities.supports_token_budget
+                        && options.token_budget > 0
+                    {
+                        Some(options.token_budget)
+                    } else {
+                        None
+                    },
+                })
+            } else {
+                None
+            },
         };
 
         client
@@ -328,7 +368,11 @@ pub async fn fetch_models(
     api_key: String,
 ) -> Result<Vec<String>, String> {
     let base_url = provider.base_url.trim_end_matches('/');
-    let url = cohere_models_url(base_url).unwrap_or_else(|| format!("{}/models", base_url));
+    let url = if is_cohere_provider(provider) {
+        cohere_models_url(base_url).unwrap_or_else(|| format!("{}/models", base_url))
+    } else {
+        format!("{}/models", base_url)
+    };
 
     debug!("Fetching models from: {}", url);
 
@@ -389,4 +433,47 @@ pub async fn fetch_models(
     }
 
     Ok(models)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cohere_provider() -> PostProcessProvider {
+        PostProcessProvider {
+            id: COHERE_PROVIDER_ID.to_string(),
+            label: "Cohere".to_string(),
+            base_url: "https://api.cohere.com/v2/chat".to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: Some("/v1/models".to_string()),
+            supports_structured_output: false,
+        }
+    }
+
+    #[test]
+    fn returns_safe_default_capabilities_for_unknown_cohere_models() {
+        let provider = cohere_provider();
+
+        let non_reasoning = get_post_process_model_capabilities(&provider, "command-a-03-2025");
+        assert!(!non_reasoning.supports_thinking);
+        assert!(!non_reasoning.supports_token_budget);
+
+        let reasoning =
+            get_post_process_model_capabilities(&provider, "command-a-reasoning-08-2025");
+        assert!(reasoning.supports_thinking);
+        assert!(reasoning.supports_token_budget);
+
+        let unknown = get_post_process_model_capabilities(&provider, "future-cohere-model");
+        assert!(!unknown.supports_thinking);
+        assert!(!unknown.supports_token_budget);
+    }
+
+    #[test]
+    fn builds_cohere_chat_model_list_url() {
+        let url = cohere_models_url("https://api.cohere.com/v2/chat").unwrap();
+        assert_eq!(
+            url,
+            "https://api.cohere.com/v1/models?endpoint=chat&page_size=1000"
+        );
+    }
 }

@@ -330,10 +330,10 @@
         "title": "Hotkey"
       },
       "api": {
-        "title": "API (OpenAI Compatible)",
+        "title": "API",
         "provider": {
           "title": "Provider",
-          "description": "Select an OpenAI-compatible provider."
+          "description": "Select a provider for AI post-processing."
         },
         "appleIntelligence": {
           "title": "Apple Intelligence",
@@ -348,11 +348,11 @@
         },
         "cohereThinking": {
           "title": "Enable Thinking",
-          "description": "Enable Cohere reasoning when the custom base URL points to the Cohere v2 chat endpoint."
+          "description": "Enable Cohere reasoning for models that explicitly support thinking."
         },
         "tokenBudget": {
           "title": "Token Budget",
-          "description": "Maximum thinking tokens for Cohere reasoning. Set to 0 to leave the budget unset."
+          "description": "Maximum thinking tokens for supported Cohere reasoning models. Set to 0 to leave the budget unset."
         },
         "apiKey": {
           "title": "API Key",

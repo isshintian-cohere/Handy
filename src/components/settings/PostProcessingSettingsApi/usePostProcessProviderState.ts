@@ -1,6 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSettings } from "../../../hooks/useSettings";
-import { commands, type PostProcessProvider } from "@/bindings";
+import {
+  commands,
+  type PostProcessModelCapabilities,
+  type PostProcessProvider,
+} from "@/bindings";
 import type { ModelOption } from "./types";
 import type { DropdownOption } from "../../ui/Dropdown";
 
@@ -9,7 +13,7 @@ type PostProcessProviderState = {
   selectedProviderId: string;
   selectedProvider: PostProcessProvider | undefined;
   isCustomProvider: boolean;
-  isCustomCohereChat: boolean;
+  isCohereProvider: boolean;
   isAppleProvider: boolean;
   appleIntelligenceUnavailable: boolean;
   baseUrl: string;
@@ -20,6 +24,8 @@ type PostProcessProviderState = {
   isApiKeyUpdating: boolean;
   model: string;
   handleModelChange: (value: string) => void;
+  modelCapabilities: PostProcessModelCapabilities;
+  shouldShowCohereThinkingControls: boolean;
   cohereThinkingEnabled: boolean;
   handleCohereThinkingEnabledChange: (value: boolean) => void;
   isCohereThinkingEnabledUpdating: boolean;
@@ -36,21 +42,7 @@ type PostProcessProviderState = {
 };
 
 const APPLE_PROVIDER_ID = "apple_intelligence";
-
-export const isCohereV2ChatBaseUrl = (baseUrl: string): boolean => {
-  try {
-    const url = new URL(baseUrl.trim());
-    const host = url.hostname.toLowerCase();
-    const normalizedPath = url.pathname.replace(/\/+$/, "");
-
-    return (
-      (host.endsWith("cohere.com") || host.endsWith("cohere.ai")) &&
-      normalizedPath === "/v2/chat"
-    );
-  } catch {
-    return false;
-  }
-};
+const COHERE_PROVIDER_ID = "cohere";
 
 export const usePostProcessProviderState = (): PostProcessProviderState => {
   const {
@@ -60,8 +52,9 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     updatePostProcessBaseUrl,
     updatePostProcessApiKey,
     updatePostProcessModel,
-    updatePostProcessCustomCohereEnableThinking,
-    updatePostProcessCustomCohereTokenBudget,
+    updatePostProcessCohereEnableThinking,
+    updatePostProcessCohereTokenBudget,
+    getPostProcessModelCapabilities,
     fetchPostProcessModels,
     postProcessModelOptions,
   } = useSettings();
@@ -81,17 +74,22 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   }, [providers, selectedProviderId]);
 
   const isAppleProvider = selectedProvider?.id === APPLE_PROVIDER_ID;
+  const isCohereProvider = selectedProvider?.id === COHERE_PROVIDER_ID;
   const [appleIntelligenceUnavailable, setAppleIntelligenceUnavailable] =
     useState(false);
+  const [modelCapabilities, setModelCapabilities] =
+    useState<PostProcessModelCapabilities>({
+      supports_thinking: false,
+      supports_token_budget: false,
+    });
 
   // Use settings directly as single source of truth
   const baseUrl = selectedProvider?.base_url ?? "";
   const apiKey = settings?.post_process_api_keys?.[selectedProviderId] ?? "";
   const model = settings?.post_process_models?.[selectedProviderId] ?? "";
   const cohereThinkingEnabled =
-    settings?.post_process_custom_cohere_enable_thinking ?? true;
-  const cohereTokenBudget =
-    settings?.post_process_custom_cohere_token_budget ?? 500;
+    settings?.post_process_cohere_enable_thinking ?? true;
+  const cohereTokenBudget = settings?.post_process_cohere_token_budget ?? 500;
 
   const providerOptions = useMemo<DropdownOption[]>(() => {
     return providers.map((provider) => ({
@@ -99,6 +97,35 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       label: provider.label,
     }));
   }, [providers]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isCohereProvider || !model.trim()) {
+      setModelCapabilities({
+        supports_thinking: false,
+        supports_token_budget: false,
+      });
+      return;
+    }
+
+    void getPostProcessModelCapabilities(selectedProviderId, model.trim()).then(
+      (capabilities) => {
+        if (!cancelled) {
+          setModelCapabilities(capabilities);
+        }
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    getPostProcessModelCapabilities,
+    isCohereProvider,
+    model,
+    selectedProviderId,
+  ]);
 
   const handleProviderSelect = useCallback(
     async (providerId: string) => {
@@ -187,19 +214,19 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   const handleCohereThinkingEnabledChange = useCallback(
     (value: boolean) => {
       if (value !== cohereThinkingEnabled) {
-        void updatePostProcessCustomCohereEnableThinking(value);
+        void updatePostProcessCohereEnableThinking(value);
       }
     },
-    [cohereThinkingEnabled, updatePostProcessCustomCohereEnableThinking],
+    [cohereThinkingEnabled, updatePostProcessCohereEnableThinking],
   );
 
   const handleCohereTokenBudgetChange = useCallback(
     (value: number) => {
       if (Number.isFinite(value) && value >= 0 && value !== cohereTokenBudget) {
-        void updatePostProcessCustomCohereTokenBudget(value);
+        void updatePostProcessCohereTokenBudget(value);
       }
     },
-    [cohereTokenBudget, updatePostProcessCustomCohereTokenBudget],
+    [cohereTokenBudget, updatePostProcessCohereTokenBudget],
   );
 
   const handleModelCreate = useCallback(
@@ -252,12 +279,13 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   );
 
   const isCustomProvider = selectedProvider?.id === "custom";
-  const isCustomCohereChat = isCustomProvider && isCohereV2ChatBaseUrl(baseUrl);
+  const shouldShowCohereThinkingControls =
+    isCohereProvider && modelCapabilities.supports_thinking;
   const isCohereThinkingEnabledUpdating = isUpdating(
-    "post_process_custom_cohere_enable_thinking",
+    "post_process_cohere_enable_thinking",
   );
   const isCohereTokenBudgetUpdating = isUpdating(
-    "post_process_custom_cohere_token_budget",
+    "post_process_cohere_token_budget",
   );
 
   // No automatic fetching - user must click refresh button
@@ -267,7 +295,7 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     selectedProviderId,
     selectedProvider,
     isCustomProvider,
-    isCustomCohereChat,
+    isCohereProvider,
     isAppleProvider,
     appleIntelligenceUnavailable,
     baseUrl,
@@ -278,6 +306,8 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     isApiKeyUpdating,
     model,
     handleModelChange,
+    modelCapabilities,
+    shouldShowCohereThinkingControls,
     cohereThinkingEnabled,
     handleCohereThinkingEnabledChange,
     isCohereThinkingEnabledUpdating,

@@ -118,8 +118,8 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
         .cloned()
         .unwrap_or_default();
     let cohere_thinking = crate::llm_client::CohereThinkingOptions {
-        enabled: settings.post_process_custom_cohere_enable_thinking,
-        token_budget: settings.post_process_custom_cohere_token_budget,
+        enabled: settings.post_process_cohere_enable_thinking,
+        token_budget: settings.post_process_cohere_token_budget,
     };
 
     if provider.supports_structured_output {

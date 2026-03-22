@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import type { AppSettings as Settings, AudioDevice } from "@/bindings";
+import type {
+  AppSettings as Settings,
+  AudioDevice,
+  PostProcessModelCapabilities,
+} from "@/bindings";
 import { commands } from "@/bindings";
 
 interface SettingsStore {
@@ -45,12 +49,12 @@ interface SettingsStore {
     apiKey: string,
   ) => Promise<void>;
   updatePostProcessModel: (providerId: string, model: string) => Promise<void>;
-  updatePostProcessCustomCohereEnableThinking: (
-    enabled: boolean,
-  ) => Promise<void>;
-  updatePostProcessCustomCohereTokenBudget: (
-    tokenBudget: number,
-  ) => Promise<void>;
+  updatePostProcessCohereEnableThinking: (enabled: boolean) => Promise<void>;
+  updatePostProcessCohereTokenBudget: (tokenBudget: number) => Promise<void>;
+  getPostProcessModelCapabilities: (
+    providerId: string,
+    model: string,
+  ) => Promise<PostProcessModelCapabilities>;
   fetchPostProcessModels: (providerId: string) => Promise<string[]>;
   setPostProcessModelOptions: (providerId: string, models: string[]) => void;
 
@@ -129,12 +133,10 @@ const settingUpdaters: {
   history_limit: (value) => commands.updateHistoryLimit(value as number),
   post_process_enabled: (value) =>
     commands.changePostProcessEnabledSetting(value as boolean),
-  post_process_custom_cohere_enable_thinking: (value) =>
-    commands.changePostProcessCustomCohereEnableThinkingSetting(
-      value as boolean,
-    ),
-  post_process_custom_cohere_token_budget: (value) =>
-    commands.changePostProcessCustomCohereTokenBudgetSetting(value as number),
+  post_process_cohere_enable_thinking: (value) =>
+    commands.changePostProcessCohereEnableThinkingSetting(value as boolean),
+  post_process_cohere_token_budget: (value) =>
+    commands.changePostProcessCohereTokenBudgetSetting(value as number),
   post_process_selected_prompt_id: (value) =>
     commands.setPostProcessSelectedPrompt(value as string),
   mute_while_recording: (value) =>
@@ -517,18 +519,37 @@ export const useSettingsStore = create<SettingsStore>()(
       return get().updatePostProcessSetting("model", providerId, model);
     },
 
-    updatePostProcessCustomCohereEnableThinking: async (enabled) => {
+    updatePostProcessCohereEnableThinking: async (enabled) => {
       return get().updateSetting(
-        "post_process_custom_cohere_enable_thinking",
+        "post_process_cohere_enable_thinking",
         enabled,
       );
     },
 
-    updatePostProcessCustomCohereTokenBudget: async (tokenBudget) => {
+    updatePostProcessCohereTokenBudget: async (tokenBudget) => {
       return get().updateSetting(
-        "post_process_custom_cohere_token_budget",
+        "post_process_cohere_token_budget",
         tokenBudget,
       );
+    },
+
+    getPostProcessModelCapabilities: async (providerId, model) => {
+      try {
+        const result = await commands.getPostProcessModelCapabilities(
+          providerId,
+          model,
+        );
+        if (result.status === "ok") {
+          return result.data;
+        }
+      } catch (error) {
+        console.error("Failed to fetch model capabilities:", error);
+      }
+
+      return {
+        supports_thinking: false,
+        supports_token_budget: false,
+      };
     },
 
     fetchPostProcessModels: async (providerId) => {
