@@ -141,9 +141,8 @@ fn build_apple_intelligence_bridge() {
     .to_string();
 
     // Prefer stub when explicitly disabled (e.g. company laptop with Apple Intelligence disabled)
-    let force_stub = env::var("HANDY_DISABLE_APPLE_INTELLIGENCE").is_ok_and(|v| {
-        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
-    });
+    let force_stub = env::var("HANDY_DISABLE_APPLE_INTELLIGENCE")
+        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"));
 
     // Check if the SDK supports FoundationModels (required for Apple Intelligence)
     let framework_path =

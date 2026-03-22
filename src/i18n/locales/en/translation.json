@@ -376,6 +376,14 @@
           "description": "API base URL for the selected provider. Only the custom provider can be edited.",
           "placeholder": "https://api.openai.com/v1"
         },
+        "cohereThinking": {
+          "title": "Enable Thinking",
+          "description": "Enable Cohere reasoning when the custom base URL points to the Cohere v2 chat endpoint."
+        },
+        "tokenBudget": {
+          "title": "Token Budget",
+          "description": "Maximum thinking tokens for Cohere reasoning. Set to 0 to leave the budget unset."
+        },
         "apiKey": {
           "title": "API Key",
           "description": "API key for the selected provider.",

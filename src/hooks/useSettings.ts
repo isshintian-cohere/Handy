@@ -40,6 +40,12 @@ interface UseSettingsReturn {
     apiKey: string,
   ) => Promise<void>;
   updatePostProcessModel: (providerId: string, model: string) => Promise<void>;
+  updatePostProcessCustomCohereEnableThinking: (
+    enabled: boolean,
+  ) => Promise<void>;
+  updatePostProcessCustomCohereTokenBudget: (
+    tokenBudget: number,
+  ) => Promise<void>;
   fetchPostProcessModels: (providerId: string) => Promise<string[]>;
 }
 
@@ -73,6 +79,10 @@ export const useSettings = (): UseSettingsReturn => {
     updatePostProcessBaseUrl: store.updatePostProcessBaseUrl,
     updatePostProcessApiKey: store.updatePostProcessApiKey,
     updatePostProcessModel: store.updatePostProcessModel,
+    updatePostProcessCustomCohereEnableThinking:
+      store.updatePostProcessCustomCohereEnableThinking,
+    updatePostProcessCustomCohereTokenBudget:
+      store.updatePostProcessCustomCohereTokenBudget,
     fetchPostProcessModels: store.fetchPostProcessModels,
   };
 };

@@ -908,6 +908,30 @@ pub fn set_post_process_provider(app: AppHandle, provider_id: String) -> Result<
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_post_process_custom_cohere_enable_thinking_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.post_process_custom_cohere_enable_thinking = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_post_process_custom_cohere_token_budget_setting(
+    app: AppHandle,
+    token_budget: u32,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.post_process_custom_cohere_token_budget = token_budget;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn add_post_process_prompt(
     app: AppHandle,
     name: String,

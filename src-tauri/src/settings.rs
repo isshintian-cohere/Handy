@@ -401,6 +401,10 @@ pub struct AppSettings {
     pub post_process_prompts: Vec<LLMPrompt>,
     #[serde(default)]
     pub post_process_selected_prompt_id: Option<String>,
+    #[serde(default = "default_post_process_custom_cohere_enable_thinking")]
+    pub post_process_custom_cohere_enable_thinking: bool,
+    #[serde(default = "default_post_process_custom_cohere_token_budget")]
+    pub post_process_custom_cohere_token_budget: u32,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -505,6 +509,14 @@ fn default_sound_theme() -> SoundTheme {
 
 fn default_post_process_enabled() -> bool {
     false
+}
+
+fn default_post_process_custom_cohere_enable_thinking() -> bool {
+    true
+}
+
+fn default_post_process_custom_cohere_token_budget() -> u32 {
+    500
 }
 
 fn default_app_language() -> String {
@@ -789,6 +801,9 @@ pub fn get_default_settings() -> AppSettings {
         post_process_models: default_post_process_models(),
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
+        post_process_custom_cohere_enable_thinking:
+            default_post_process_custom_cohere_enable_thinking(),
+        post_process_custom_cohere_token_budget: default_post_process_custom_cohere_token_budget(),
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),

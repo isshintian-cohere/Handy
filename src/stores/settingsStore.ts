@@ -51,6 +51,12 @@ interface SettingsStore {
     apiKey: string,
   ) => Promise<void>;
   updatePostProcessModel: (providerId: string, model: string) => Promise<void>;
+  updatePostProcessCustomCohereEnableThinking: (
+    enabled: boolean,
+  ) => Promise<void>;
+  updatePostProcessCustomCohereTokenBudget: (
+    tokenBudget: number,
+  ) => Promise<void>;
   fetchPostProcessModels: (providerId: string) => Promise<string[]>;
   setPostProcessModelOptions: (providerId: string, models: string[]) => void;
 
@@ -131,6 +137,12 @@ const settingUpdaters: {
   history_limit: (value) => commands.updateHistoryLimit(value as number),
   post_process_enabled: (value) =>
     commands.changePostProcessEnabledSetting(value as boolean),
+  post_process_custom_cohere_enable_thinking: (value) =>
+    commands.changePostProcessCustomCohereEnableThinkingSetting(
+      value as boolean,
+    ),
+  post_process_custom_cohere_token_budget: (value) =>
+    commands.changePostProcessCustomCohereTokenBudgetSetting(value as number),
   post_process_selected_prompt_id: (value) =>
     commands.setPostProcessSelectedPrompt(value as string),
   mute_while_recording: (value) =>
@@ -523,6 +535,20 @@ export const useSettingsStore = create<SettingsStore>()(
 
     updatePostProcessModel: async (providerId, model) => {
       return get().updatePostProcessSetting("model", providerId, model);
+    },
+
+    updatePostProcessCustomCohereEnableThinking: async (enabled) => {
+      return get().updateSetting(
+        "post_process_custom_cohere_enable_thinking",
+        enabled,
+      );
+    },
+
+    updatePostProcessCustomCohereTokenBudget: async (tokenBudget) => {
+      return get().updateSetting(
+        "post_process_custom_cohere_token_budget",
+        tokenBudget,
+      );
     },
 
     fetchPostProcessModels: async (providerId) => {

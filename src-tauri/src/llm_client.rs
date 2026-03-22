@@ -1,6 +1,7 @@
 use crate::settings::PostProcessProvider;
 use log::debug;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, REFERER, USER_AGENT};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -30,6 +31,28 @@ struct ChatCompletionRequest {
     messages: Vec<ChatMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<ResponseFormat>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CohereThinkingOptions {
+    pub enabled: bool,
+    pub token_budget: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct CohereThinkingRequest {
+    #[serde(rename = "type")]
+    thinking_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token_budget: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+struct CohereChatRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<CohereThinkingRequest>,
 }
 
 /// OpenAI-style response: choices[].message.content
@@ -71,6 +94,31 @@ struct CohereContentBlock {
     #[serde(rename = "type")]
     block_type: Option<String>,
     text: Option<String>,
+}
+
+fn is_cohere_host(url: &Url) -> bool {
+    matches!(
+        url.host_str(),
+        Some(host) if host.ends_with("cohere.com") || host.ends_with("cohere.ai")
+    )
+}
+
+pub fn is_cohere_v2_chat_url(base_url: &str) -> bool {
+    Url::parse(base_url)
+        .map(|url| is_cohere_host(&url) && url.path().trim_end_matches('/') == "/v2/chat")
+        .unwrap_or(false)
+}
+
+fn cohere_models_url(base_url: &str) -> Option<String> {
+    let mut url = Url::parse(base_url).ok()?;
+    if !is_cohere_host(&url) {
+        return None;
+    }
+
+    url.set_path("/v1/models");
+    url.set_query(None);
+    url.set_fragment(None);
+    Some(url.to_string())
 }
 
 /// Build headers for API requests based on provider type
@@ -127,8 +175,18 @@ pub async fn send_chat_completion(
     api_key: String,
     model: &str,
     prompt: String,
+    cohere_thinking: Option<CohereThinkingOptions>,
 ) -> Result<Option<String>, String> {
-    send_chat_completion_with_schema(provider, api_key, model, prompt, None, None).await
+    send_chat_completion_with_schema(
+        provider,
+        api_key,
+        model,
+        prompt,
+        None,
+        None,
+        cohere_thinking,
+    )
+    .await
 }
 
 /// Send a chat completion request with structured output support
@@ -141,9 +199,10 @@ pub async fn send_chat_completion_with_schema(
     user_content: String,
     system_prompt: Option<String>,
     json_schema: Option<Value>,
+    cohere_thinking: Option<CohereThinkingOptions>,
 ) -> Result<Option<String>, String> {
     let base_url = provider.base_url.trim_end_matches('/');
-    let is_cohere = base_url.contains("cohere.com");
+    let is_cohere = is_cohere_v2_chat_url(base_url);
     let url = if is_cohere {
         base_url.to_string()
     } else {
@@ -171,6 +230,8 @@ pub async fn send_chat_completion_with_schema(
         content: user_content,
     });
 
+    let has_json_schema = json_schema.is_some();
+
     // Build response_format if schema is provided
     let response_format = json_schema.map(|schema| ResponseFormat {
         format_type: "json_schema".to_string(),
@@ -186,13 +247,42 @@ pub async fn send_chat_completion_with_schema(
         messages,
         response_format,
     };
+    let response = if is_cohere {
+        if has_json_schema {
+            debug!("Ignoring OpenAI structured output schema for Cohere request");
+        }
 
-    let response = client
-        .post(&url)
-        .json(&request_body)
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
+        let request_body = CohereChatRequest {
+            model: model.to_string(),
+            messages: request_body.messages,
+            thinking: cohere_thinking.map(|options| CohereThinkingRequest {
+                thinking_type: if options.enabled {
+                    "enabled".to_string()
+                } else {
+                    "disabled".to_string()
+                },
+                token_budget: if options.enabled && options.token_budget > 0 {
+                    Some(options.token_budget)
+                } else {
+                    None
+                },
+            }),
+        };
+
+        client
+            .post(&url)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request failed: {}", e))?
+    } else {
+        client
+            .post(&url)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request failed: {}", e))?
+    };
 
     let status = response.status();
     let response_text = response
@@ -212,10 +302,7 @@ pub async fn send_chat_completion_with_schema(
         let text = match completion.message.content {
             CohereContent::String(s) => Some(s),
             CohereContent::Array(blocks) => {
-                let parts: Vec<String> = blocks
-                    .into_iter()
-                    .filter_map(|b| b.text)
-                    .collect();
+                let parts: Vec<String> = blocks.into_iter().filter_map(|b| b.text).collect();
                 if parts.is_empty() {
                     None
                 } else {
@@ -241,7 +328,7 @@ pub async fn fetch_models(
     api_key: String,
 ) -> Result<Vec<String>, String> {
     let base_url = provider.base_url.trim_end_matches('/');
-    let url = format!("{}/models", base_url);
+    let url = cohere_models_url(base_url).unwrap_or_else(|| format!("{}/models", base_url));
 
     debug!("Fetching models from: {}", url);
 
@@ -279,6 +366,16 @@ pub async fn fetch_models(
                 models.push(id.to_string());
             } else if let Some(name) = entry.get("name").and_then(|n| n.as_str()) {
                 models.push(name.to_string());
+            }
+        }
+    }
+    // Handle Cohere format: { models: [ { name: "..." }, ... ] }
+    else if let Some(data) = parsed.get("models").and_then(|d| d.as_array()) {
+        for entry in data {
+            if let Some(name) = entry.get("name").and_then(|n| n.as_str()) {
+                models.push(name.to_string());
+            } else if let Some(id) = entry.get("id").and_then(|i| i.as_str()) {
+                models.push(id.to_string());
             }
         }
     }

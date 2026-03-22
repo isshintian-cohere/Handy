@@ -9,6 +9,7 @@ import {
   SettingContainer,
   SettingsGroup,
   Textarea,
+  ToggleSwitch,
 } from "@/components/ui";
 import { Button } from "../../ui/Button";
 import { ResetButton } from "../../ui/ResetButton";
@@ -53,25 +54,78 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
       ) : (
         <>
           {state.selectedProvider?.id === "custom" && (
-            <SettingContainer
-              title={t("settings.postProcessing.api.baseUrl.title")}
-              description={t("settings.postProcessing.api.baseUrl.description")}
-              descriptionMode="tooltip"
-              layout="horizontal"
-              grouped={true}
-            >
-              <div className="flex items-center gap-2">
-                <BaseUrlField
-                  value={state.baseUrl}
-                  onBlur={state.handleBaseUrlChange}
-                  placeholder={t(
-                    "settings.postProcessing.api.baseUrl.placeholder",
-                  )}
-                  disabled={state.isBaseUrlUpdating}
-                  className="min-w-[380px]"
-                />
-              </div>
-            </SettingContainer>
+            <>
+              <SettingContainer
+                title={t("settings.postProcessing.api.baseUrl.title")}
+                description={t(
+                  "settings.postProcessing.api.baseUrl.description",
+                )}
+                descriptionMode="tooltip"
+                layout="horizontal"
+                grouped={true}
+              >
+                <div className="flex items-center gap-2">
+                  <BaseUrlField
+                    value={state.baseUrl}
+                    onBlur={state.handleBaseUrlChange}
+                    placeholder={t(
+                      "settings.postProcessing.api.baseUrl.placeholder",
+                    )}
+                    disabled={state.isBaseUrlUpdating}
+                    className="min-w-[380px]"
+                  />
+                </div>
+              </SettingContainer>
+
+              {state.isCustomCohereChat && (
+                <>
+                  <ToggleSwitch
+                    checked={state.cohereThinkingEnabled}
+                    onChange={state.handleCohereThinkingEnabledChange}
+                    isUpdating={state.isCohereThinkingEnabledUpdating}
+                    label={t(
+                      "settings.postProcessing.api.cohereThinking.title",
+                    )}
+                    description={t(
+                      "settings.postProcessing.api.cohereThinking.description",
+                    )}
+                    descriptionMode="tooltip"
+                    grouped={true}
+                  />
+
+                  <SettingContainer
+                    title={t("settings.postProcessing.api.tokenBudget.title")}
+                    description={t(
+                      "settings.postProcessing.api.tokenBudget.description",
+                    )}
+                    descriptionMode="tooltip"
+                    layout="horizontal"
+                    grouped={true}
+                    disabled={!state.cohereThinkingEnabled}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={state.cohereTokenBudget}
+                        onChange={(event) => {
+                          const value = parseInt(event.target.value, 10);
+                          if (!Number.isNaN(value)) {
+                            state.handleCohereTokenBudgetChange(value);
+                          }
+                        }}
+                        disabled={
+                          !state.cohereThinkingEnabled ||
+                          state.isCohereTokenBudgetUpdating
+                        }
+                        className="w-28"
+                      />
+                    </div>
+                  </SettingContainer>
+                </>
+              )}
+            </>
           )}
 
           <SettingContainer
