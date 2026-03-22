@@ -9,6 +9,7 @@ type PostProcessProviderState = {
   selectedProviderId: string;
   selectedProvider: PostProcessProvider | undefined;
   isCustomProvider: boolean;
+  isCustomCohereChat: boolean;
   isAppleProvider: boolean;
   appleIntelligenceUnavailable: boolean;
   baseUrl: string;
@@ -19,6 +20,12 @@ type PostProcessProviderState = {
   isApiKeyUpdating: boolean;
   model: string;
   handleModelChange: (value: string) => void;
+  cohereThinkingEnabled: boolean;
+  handleCohereThinkingEnabledChange: (value: boolean) => void;
+  isCohereThinkingEnabledUpdating: boolean;
+  cohereTokenBudget: number;
+  handleCohereTokenBudgetChange: (value: number) => void;
+  isCohereTokenBudgetUpdating: boolean;
   modelOptions: ModelOption[];
   isModelUpdating: boolean;
   isFetchingModels: boolean;
@@ -30,6 +37,21 @@ type PostProcessProviderState = {
 
 const APPLE_PROVIDER_ID = "apple_intelligence";
 
+export const isCohereV2ChatBaseUrl = (baseUrl: string): boolean => {
+  try {
+    const url = new URL(baseUrl.trim());
+    const host = url.hostname.toLowerCase();
+    const normalizedPath = url.pathname.replace(/\/+$/, "");
+
+    return (
+      (host.endsWith("cohere.com") || host.endsWith("cohere.ai")) &&
+      normalizedPath === "/v2/chat"
+    );
+  } catch {
+    return false;
+  }
+};
+
 export const usePostProcessProviderState = (): PostProcessProviderState => {
   const {
     settings,
@@ -38,6 +60,8 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     updatePostProcessBaseUrl,
     updatePostProcessApiKey,
     updatePostProcessModel,
+    updatePostProcessCustomCohereEnableThinking,
+    updatePostProcessCustomCohereTokenBudget,
     fetchPostProcessModels,
     postProcessModelOptions,
   } = useSettings();
@@ -64,6 +88,10 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   const baseUrl = selectedProvider?.base_url ?? "";
   const apiKey = settings?.post_process_api_keys?.[selectedProviderId] ?? "";
   const model = settings?.post_process_models?.[selectedProviderId] ?? "";
+  const cohereThinkingEnabled =
+    settings?.post_process_custom_cohere_enable_thinking ?? true;
+  const cohereTokenBudget =
+    settings?.post_process_custom_cohere_token_budget ?? 500;
 
   const providerOptions = useMemo<DropdownOption[]>(() => {
     return providers.map((provider) => ({
@@ -156,6 +184,24 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     [selectedProviderId, updatePostProcessModel],
   );
 
+  const handleCohereThinkingEnabledChange = useCallback(
+    (value: boolean) => {
+      if (value !== cohereThinkingEnabled) {
+        void updatePostProcessCustomCohereEnableThinking(value);
+      }
+    },
+    [cohereThinkingEnabled, updatePostProcessCustomCohereEnableThinking],
+  );
+
+  const handleCohereTokenBudgetChange = useCallback(
+    (value: number) => {
+      if (Number.isFinite(value) && value >= 0 && value !== cohereTokenBudget) {
+        void updatePostProcessCustomCohereTokenBudget(value);
+      }
+    },
+    [cohereTokenBudget, updatePostProcessCustomCohereTokenBudget],
+  );
+
   const handleModelCreate = useCallback(
     (value: string) => {
       void updatePostProcessModel(selectedProviderId, value);
@@ -206,6 +252,13 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
   );
 
   const isCustomProvider = selectedProvider?.id === "custom";
+  const isCustomCohereChat = isCustomProvider && isCohereV2ChatBaseUrl(baseUrl);
+  const isCohereThinkingEnabledUpdating = isUpdating(
+    "post_process_custom_cohere_enable_thinking",
+  );
+  const isCohereTokenBudgetUpdating = isUpdating(
+    "post_process_custom_cohere_token_budget",
+  );
 
   // No automatic fetching - user must click refresh button
 
@@ -214,6 +267,7 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     selectedProviderId,
     selectedProvider,
     isCustomProvider,
+    isCustomCohereChat,
     isAppleProvider,
     appleIntelligenceUnavailable,
     baseUrl,
@@ -224,6 +278,12 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     isApiKeyUpdating,
     model,
     handleModelChange,
+    cohereThinkingEnabled,
+    handleCohereThinkingEnabledChange,
+    isCohereThinkingEnabledUpdating,
+    cohereTokenBudget,
+    handleCohereTokenBudgetChange,
+    isCohereTokenBudgetUpdating,
     modelOptions,
     isModelUpdating,
     isFetchingModels,

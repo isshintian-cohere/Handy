@@ -117,6 +117,10 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
         .get(&provider.id)
         .cloned()
         .unwrap_or_default();
+    let cohere_thinking = crate::llm_client::CohereThinkingOptions {
+        enabled: settings.post_process_custom_cohere_enable_thinking,
+        token_budget: settings.post_process_custom_cohere_token_budget,
+    };
 
     if provider.supports_structured_output {
         debug!("Using structured outputs for provider '{}'", provider.id);
@@ -188,6 +192,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
             user_content,
             Some(system_prompt),
             Some(json_schema),
+            Some(cohere_thinking),
         )
         .await
         {
@@ -237,8 +242,14 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     let processed_prompt = prompt.replace("${output}", transcription);
     debug!("Processed prompt length: {} chars", processed_prompt.len());
 
-    match crate::llm_client::send_chat_completion(&provider, api_key, &model, processed_prompt)
-        .await
+    match crate::llm_client::send_chat_completion(
+        &provider,
+        api_key,
+        &model,
+        processed_prompt,
+        Some(cohere_thinking),
+    )
+    .await
     {
         Ok(Some(content)) => {
             let content = strip_invisible_chars(&content);
