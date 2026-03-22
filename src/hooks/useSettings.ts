@@ -1,6 +1,10 @@
 import { useEffect } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
-import type { AppSettings as Settings, AudioDevice } from "@/bindings";
+import type {
+  AppSettings as Settings,
+  AudioDevice,
+  PostProcessModelCapabilities,
+} from "@/bindings";
 
 interface UseSettingsReturn {
   // State
@@ -40,12 +44,12 @@ interface UseSettingsReturn {
     apiKey: string,
   ) => Promise<void>;
   updatePostProcessModel: (providerId: string, model: string) => Promise<void>;
-  updatePostProcessCustomCohereEnableThinking: (
-    enabled: boolean,
-  ) => Promise<void>;
-  updatePostProcessCustomCohereTokenBudget: (
-    tokenBudget: number,
-  ) => Promise<void>;
+  updatePostProcessCohereEnableThinking: (enabled: boolean) => Promise<void>;
+  updatePostProcessCohereTokenBudget: (tokenBudget: number) => Promise<void>;
+  getPostProcessModelCapabilities: (
+    providerId: string,
+    model: string,
+  ) => Promise<PostProcessModelCapabilities>;
   fetchPostProcessModels: (providerId: string) => Promise<string[]>;
 }
 
@@ -79,10 +83,11 @@ export const useSettings = (): UseSettingsReturn => {
     updatePostProcessBaseUrl: store.updatePostProcessBaseUrl,
     updatePostProcessApiKey: store.updatePostProcessApiKey,
     updatePostProcessModel: store.updatePostProcessModel,
-    updatePostProcessCustomCohereEnableThinking:
-      store.updatePostProcessCustomCohereEnableThinking,
-    updatePostProcessCustomCohereTokenBudget:
-      store.updatePostProcessCustomCohereTokenBudget,
+    updatePostProcessCohereEnableThinking:
+      store.updatePostProcessCohereEnableThinking,
+    updatePostProcessCohereTokenBudget:
+      store.updatePostProcessCohereTokenBudget,
+    getPostProcessModelCapabilities: store.getPostProcessModelCapabilities,
     fetchPostProcessModels: store.fetchPostProcessModels,
   };
 };

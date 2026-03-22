@@ -54,78 +54,25 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
       ) : (
         <>
           {state.selectedProvider?.id === "custom" && (
-            <>
-              <SettingContainer
-                title={t("settings.postProcessing.api.baseUrl.title")}
-                description={t(
-                  "settings.postProcessing.api.baseUrl.description",
-                )}
-                descriptionMode="tooltip"
-                layout="horizontal"
-                grouped={true}
-              >
-                <div className="flex items-center gap-2">
-                  <BaseUrlField
-                    value={state.baseUrl}
-                    onBlur={state.handleBaseUrlChange}
-                    placeholder={t(
-                      "settings.postProcessing.api.baseUrl.placeholder",
-                    )}
-                    disabled={state.isBaseUrlUpdating}
-                    className="min-w-[380px]"
-                  />
-                </div>
-              </SettingContainer>
-
-              {state.isCustomCohereChat && (
-                <>
-                  <ToggleSwitch
-                    checked={state.cohereThinkingEnabled}
-                    onChange={state.handleCohereThinkingEnabledChange}
-                    isUpdating={state.isCohereThinkingEnabledUpdating}
-                    label={t(
-                      "settings.postProcessing.api.cohereThinking.title",
-                    )}
-                    description={t(
-                      "settings.postProcessing.api.cohereThinking.description",
-                    )}
-                    descriptionMode="tooltip"
-                    grouped={true}
-                  />
-
-                  <SettingContainer
-                    title={t("settings.postProcessing.api.tokenBudget.title")}
-                    description={t(
-                      "settings.postProcessing.api.tokenBudget.description",
-                    )}
-                    descriptionMode="tooltip"
-                    layout="horizontal"
-                    grouped={true}
-                    disabled={!state.cohereThinkingEnabled}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={state.cohereTokenBudget}
-                        onChange={(event) => {
-                          const value = parseInt(event.target.value, 10);
-                          if (!Number.isNaN(value)) {
-                            state.handleCohereTokenBudgetChange(value);
-                          }
-                        }}
-                        disabled={
-                          !state.cohereThinkingEnabled ||
-                          state.isCohereTokenBudgetUpdating
-                        }
-                        className="w-28"
-                      />
-                    </div>
-                  </SettingContainer>
-                </>
-              )}
-            </>
+            <SettingContainer
+              title={t("settings.postProcessing.api.baseUrl.title")}
+              description={t("settings.postProcessing.api.baseUrl.description")}
+              descriptionMode="tooltip"
+              layout="horizontal"
+              grouped={true}
+            >
+              <div className="flex items-center gap-2">
+                <BaseUrlField
+                  value={state.baseUrl}
+                  onBlur={state.handleBaseUrlChange}
+                  placeholder={t(
+                    "settings.postProcessing.api.baseUrl.placeholder",
+                  )}
+                  disabled={state.isBaseUrlUpdating}
+                  className="min-w-[380px]"
+                />
+              </div>
+            </SettingContainer>
           )}
 
           <SettingContainer
@@ -151,47 +98,100 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
       )}
 
       {!state.isAppleProvider && (
-        <SettingContainer
-          title={t("settings.postProcessing.api.model.title")}
-          description={
-            state.isCustomProvider
-              ? t("settings.postProcessing.api.model.descriptionCustom")
-              : t("settings.postProcessing.api.model.descriptionDefault")
-          }
-          descriptionMode="tooltip"
-          layout="stacked"
-          grouped={true}
-        >
-          <div className="flex items-center gap-2">
-            <ModelSelect
-              value={state.model}
-              options={state.modelOptions}
-              disabled={state.isModelUpdating}
-              isLoading={state.isFetchingModels}
-              placeholder={
-                state.modelOptions.length > 0
-                  ? t(
-                      "settings.postProcessing.api.model.placeholderWithOptions",
-                    )
-                  : t("settings.postProcessing.api.model.placeholderNoOptions")
-              }
-              onSelect={state.handleModelSelect}
-              onCreate={state.handleModelCreate}
-              onBlur={() => {}}
-              className="flex-1 min-w-[380px]"
-            />
-            <ResetButton
-              onClick={state.handleRefreshModels}
-              disabled={state.isFetchingModels}
-              ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
-              className="flex h-10 w-10 items-center justify-center"
-            >
-              <RefreshCcw
-                className={`h-4 w-4 ${state.isFetchingModels ? "animate-spin" : ""}`}
+        <>
+          <SettingContainer
+            title={t("settings.postProcessing.api.model.title")}
+            description={
+              state.isCustomProvider
+                ? t("settings.postProcessing.api.model.descriptionCustom")
+                : t("settings.postProcessing.api.model.descriptionDefault")
+            }
+            descriptionMode="tooltip"
+            layout="stacked"
+            grouped={true}
+          >
+            <div className="flex items-center gap-2">
+              <ModelSelect
+                value={state.model}
+                options={state.modelOptions}
+                disabled={state.isModelUpdating}
+                isLoading={state.isFetchingModels}
+                placeholder={
+                  state.modelOptions.length > 0
+                    ? t(
+                        "settings.postProcessing.api.model.placeholderWithOptions",
+                      )
+                    : t(
+                        "settings.postProcessing.api.model.placeholderNoOptions",
+                      )
+                }
+                onSelect={state.handleModelSelect}
+                onCreate={state.handleModelCreate}
+                onBlur={() => {}}
+                className="flex-1 min-w-[380px]"
               />
-            </ResetButton>
-          </div>
-        </SettingContainer>
+              <ResetButton
+                onClick={state.handleRefreshModels}
+                disabled={state.isFetchingModels}
+                ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
+                className="flex h-10 w-10 items-center justify-center"
+              >
+                <RefreshCcw
+                  className={`h-4 w-4 ${state.isFetchingModels ? "animate-spin" : ""}`}
+                />
+              </ResetButton>
+            </div>
+          </SettingContainer>
+
+          {state.shouldShowCohereThinkingControls && (
+            <>
+              <ToggleSwitch
+                checked={state.cohereThinkingEnabled}
+                onChange={state.handleCohereThinkingEnabledChange}
+                isUpdating={state.isCohereThinkingEnabledUpdating}
+                label={t("settings.postProcessing.api.cohereThinking.title")}
+                description={t(
+                  "settings.postProcessing.api.cohereThinking.description",
+                )}
+                descriptionMode="tooltip"
+                grouped={true}
+              />
+
+              {state.modelCapabilities.supports_token_budget && (
+                <SettingContainer
+                  title={t("settings.postProcessing.api.tokenBudget.title")}
+                  description={t(
+                    "settings.postProcessing.api.tokenBudget.description",
+                  )}
+                  descriptionMode="tooltip"
+                  layout="horizontal"
+                  grouped={true}
+                  disabled={!state.cohereThinkingEnabled}
+                >
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={state.cohereTokenBudget}
+                      onChange={(event) => {
+                        const value = parseInt(event.target.value, 10);
+                        if (!Number.isNaN(value)) {
+                          state.handleCohereTokenBudgetChange(value);
+                        }
+                      }}
+                      disabled={
+                        !state.cohereThinkingEnabled ||
+                        state.isCohereTokenBudgetUpdating
+                      }
+                      className="w-28"
+                    />
+                  </div>
+                </SettingContainer>
+              )}
+            </>
+          )}
+        </>
       )}
     </>
   );

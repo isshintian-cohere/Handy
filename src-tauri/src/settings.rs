@@ -1,4 +1,5 @@
 use log::{debug, warn};
+use reqwest::Url;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
@@ -9,6 +10,10 @@ use tauri_plugin_store::StoreExt;
 
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
+pub const COHERE_PROVIDER_ID: &str = "cohere";
+pub const COHERE_DEFAULT_BASE_URL: &str = "https://api.cohere.com/v2/chat";
+pub const CUSTOM_PROVIDER_ID: &str = "custom";
+pub const CUSTOM_PROVIDER_DEFAULT_BASE_URL: &str = "http://localhost:11434/v1";
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
@@ -401,10 +406,16 @@ pub struct AppSettings {
     pub post_process_prompts: Vec<LLMPrompt>,
     #[serde(default)]
     pub post_process_selected_prompt_id: Option<String>,
-    #[serde(default = "default_post_process_custom_cohere_enable_thinking")]
-    pub post_process_custom_cohere_enable_thinking: bool,
-    #[serde(default = "default_post_process_custom_cohere_token_budget")]
-    pub post_process_custom_cohere_token_budget: u32,
+    #[serde(
+        default = "default_post_process_cohere_enable_thinking",
+        alias = "post_process_custom_cohere_enable_thinking"
+    )]
+    pub post_process_cohere_enable_thinking: bool,
+    #[serde(
+        default = "default_post_process_cohere_token_budget",
+        alias = "post_process_custom_cohere_token_budget"
+    )]
+    pub post_process_cohere_token_budget: u32,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
@@ -511,11 +522,11 @@ fn default_post_process_enabled() -> bool {
     false
 }
 
-fn default_post_process_custom_cohere_enable_thinking() -> bool {
+fn default_post_process_cohere_enable_thinking() -> bool {
     true
 }
 
-fn default_post_process_custom_cohere_token_budget() -> u32 {
+fn default_post_process_cohere_token_budget() -> u32 {
     500
 }
 
@@ -531,6 +542,18 @@ fn default_show_tray_icon() -> bool {
 
 fn default_post_process_provider_id() -> String {
     "openai".to_string()
+}
+
+pub fn is_cohere_v2_chat_url(base_url: &str) -> bool {
+    Url::parse(base_url)
+        .map(|url| {
+            let host = url
+                .host_str()
+                .map(|host| host.ends_with("cohere.com") || host.ends_with("cohere.ai"))
+                .unwrap_or(false);
+            host && url.path().trim_end_matches('/') == "/v2/chat"
+        })
+        .unwrap_or(false)
 }
 
 fn default_post_process_providers() -> Vec<PostProcessProvider> {
@@ -583,6 +606,14 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
         },
+        PostProcessProvider {
+            id: COHERE_PROVIDER_ID.to_string(),
+            label: "Cohere".to_string(),
+            base_url: COHERE_DEFAULT_BASE_URL.to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: Some("/v1/models".to_string()),
+            supports_structured_output: false,
+        },
     ];
 
     // Note: We always include Apple Intelligence on macOS ARM64 without checking availability
@@ -603,9 +634,9 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
 
     // Custom provider always comes last
     providers.push(PostProcessProvider {
-        id: "custom".to_string(),
+        id: CUSTOM_PROVIDER_ID.to_string(),
         label: "Custom".to_string(),
-        base_url: "http://localhost:11434/v1".to_string(),
+        base_url: CUSTOM_PROVIDER_DEFAULT_BASE_URL.to_string(),
         allow_base_url_edit: true,
         models_endpoint: Some("/models".to_string()),
         supports_structured_output: false,
@@ -712,6 +743,90 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     changed
 }
 
+fn migrate_custom_cohere_provider(settings: &mut AppSettings) -> bool {
+    let Some(custom_provider) = settings.post_process_provider(CUSTOM_PROVIDER_ID) else {
+        return false;
+    };
+
+    if !is_cohere_v2_chat_url(&custom_provider.base_url) {
+        return false;
+    }
+
+    let mut changed = false;
+    let custom_api_key = settings
+        .post_process_api_keys
+        .get(CUSTOM_PROVIDER_ID)
+        .cloned()
+        .unwrap_or_default();
+    let custom_model = settings
+        .post_process_models
+        .get(CUSTOM_PROVIDER_ID)
+        .cloned()
+        .unwrap_or_default();
+
+    if settings.post_process_provider_id == CUSTOM_PROVIDER_ID {
+        settings.post_process_provider_id = COHERE_PROVIDER_ID.to_string();
+        changed = true;
+    }
+
+    if settings
+        .post_process_api_keys
+        .get(COHERE_PROVIDER_ID)
+        .map(|value| value != &custom_api_key)
+        .unwrap_or(true)
+    {
+        settings
+            .post_process_api_keys
+            .insert(COHERE_PROVIDER_ID.to_string(), custom_api_key.clone());
+        changed = true;
+    }
+
+    if settings
+        .post_process_models
+        .get(COHERE_PROVIDER_ID)
+        .map(|value| value != &custom_model)
+        .unwrap_or(true)
+    {
+        settings
+            .post_process_models
+            .insert(COHERE_PROVIDER_ID.to_string(), custom_model.clone());
+        changed = true;
+    }
+
+    if settings
+        .post_process_api_keys
+        .get(CUSTOM_PROVIDER_ID)
+        .map(|value| !value.is_empty())
+        .unwrap_or(false)
+    {
+        settings
+            .post_process_api_keys
+            .insert(CUSTOM_PROVIDER_ID.to_string(), String::new());
+        changed = true;
+    }
+
+    if settings
+        .post_process_models
+        .get(CUSTOM_PROVIDER_ID)
+        .map(|value| !value.is_empty())
+        .unwrap_or(false)
+    {
+        settings
+            .post_process_models
+            .insert(CUSTOM_PROVIDER_ID.to_string(), String::new());
+        changed = true;
+    }
+
+    if let Some(custom_provider) = settings.post_process_provider_mut(CUSTOM_PROVIDER_ID) {
+        if custom_provider.base_url != CUSTOM_PROVIDER_DEFAULT_BASE_URL {
+            custom_provider.base_url = CUSTOM_PROVIDER_DEFAULT_BASE_URL.to_string();
+            changed = true;
+        }
+    }
+
+    changed
+}
+
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
@@ -801,9 +916,8 @@ pub fn get_default_settings() -> AppSettings {
         post_process_models: default_post_process_models(),
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
-        post_process_custom_cohere_enable_thinking:
-            default_post_process_custom_cohere_enable_thinking(),
-        post_process_custom_cohere_token_budget: default_post_process_custom_cohere_token_budget(),
+        post_process_cohere_enable_thinking: default_post_process_cohere_enable_thinking(),
+        post_process_cohere_token_budget: default_post_process_cohere_token_budget(),
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),
@@ -889,7 +1003,9 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    let defaults_changed = ensure_post_process_defaults(&mut settings);
+    let migration_changed = migrate_custom_cohere_provider(&mut settings);
+    if defaults_changed || migration_changed {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
@@ -913,7 +1029,9 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    let defaults_changed = ensure_post_process_defaults(&mut settings);
+    let migration_changed = migrate_custom_cohere_provider(&mut settings);
+    if defaults_changed || migration_changed {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
@@ -955,6 +1073,7 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn default_settings_disable_auto_submit() {
@@ -990,5 +1109,73 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn migrates_legacy_custom_cohere_settings_idempotently() {
+        let mut legacy_settings = get_default_settings();
+        legacy_settings.post_process_provider_id = CUSTOM_PROVIDER_ID.to_string();
+        legacy_settings
+            .post_process_api_keys
+            .insert(CUSTOM_PROVIDER_ID.to_string(), "cohere-key".to_string());
+        legacy_settings.post_process_models.insert(
+            CUSTOM_PROVIDER_ID.to_string(),
+            "command-a-reasoning-08-2025".to_string(),
+        );
+        legacy_settings
+            .post_process_provider_mut(CUSTOM_PROVIDER_ID)
+            .expect("custom provider should exist")
+            .base_url = COHERE_DEFAULT_BASE_URL.to_string();
+        legacy_settings.post_process_cohere_enable_thinking = true;
+        legacy_settings.post_process_cohere_token_budget = 500;
+
+        let mut serialized = serde_json::to_value(legacy_settings).unwrap();
+        let serialized_settings = serialized
+            .as_object_mut()
+            .expect("settings should serialize to an object");
+        serialized_settings.remove("post_process_cohere_enable_thinking");
+        serialized_settings.remove("post_process_cohere_token_budget");
+        serialized_settings.insert(
+            "post_process_custom_cohere_enable_thinking".to_string(),
+            json!(false),
+        );
+        serialized_settings.insert(
+            "post_process_custom_cohere_token_budget".to_string(),
+            json!(321),
+        );
+
+        let mut settings: AppSettings = serde_json::from_value(serialized).unwrap();
+        assert!(!settings.post_process_cohere_enable_thinking);
+        assert_eq!(settings.post_process_cohere_token_budget, 321);
+
+        assert!(migrate_custom_cohere_provider(&mut settings));
+        assert_eq!(settings.post_process_provider_id, COHERE_PROVIDER_ID);
+        assert_eq!(
+            settings.post_process_api_keys.get(COHERE_PROVIDER_ID),
+            Some(&"cohere-key".to_string())
+        );
+        assert_eq!(
+            settings.post_process_models.get(COHERE_PROVIDER_ID),
+            Some(&"command-a-reasoning-08-2025".to_string())
+        );
+        assert_eq!(
+            settings.post_process_api_keys.get(CUSTOM_PROVIDER_ID),
+            Some(&String::new())
+        );
+        assert_eq!(
+            settings.post_process_models.get(CUSTOM_PROVIDER_ID),
+            Some(&String::new())
+        );
+        assert_eq!(
+            settings
+                .post_process_provider(CUSTOM_PROVIDER_ID)
+                .expect("custom provider should still exist")
+                .base_url,
+            CUSTOM_PROVIDER_DEFAULT_BASE_URL
+        );
+
+        let migrated_once = serde_json::to_value(&settings).unwrap();
+        assert!(!migrate_custom_cohere_provider(&mut settings));
+        assert_eq!(serde_json::to_value(&settings).unwrap(), migrated_once);
     }
 }
