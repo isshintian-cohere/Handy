@@ -559,6 +559,14 @@ pub fn is_cohere_v2_chat_url(base_url: &str) -> bool {
 fn default_post_process_providers() -> Vec<PostProcessProvider> {
     let mut providers = vec![
         PostProcessProvider {
+            id: COHERE_PROVIDER_ID.to_string(),
+            label: "Cohere".to_string(),
+            base_url: COHERE_DEFAULT_BASE_URL.to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: Some("/v1/models".to_string()),
+            supports_structured_output: false,
+        },
+        PostProcessProvider {
             id: "openai".to_string(),
             label: "OpenAI".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
@@ -605,14 +613,6 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
             supports_structured_output: true,
-        },
-        PostProcessProvider {
-            id: COHERE_PROVIDER_ID.to_string(),
-            label: "Cohere".to_string(),
-            base_url: COHERE_DEFAULT_BASE_URL.to_string(),
-            allow_base_url_edit: false,
-            models_endpoint: Some("/v1/models".to_string()),
-            supports_structured_output: false,
         },
     ];
 
@@ -738,6 +738,31 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                 changed = true;
             }
         }
+    }
+
+    // Reorder stored providers to match the canonical default order.
+    // Providers not in the defaults list are appended at the end.
+    let defaults = default_post_process_providers();
+    let default_order: std::collections::HashMap<&str, usize> = defaults
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.id.as_str(), i))
+        .collect();
+    let old_order: Vec<String> = settings
+        .post_process_providers
+        .iter()
+        .map(|p| p.id.clone())
+        .collect();
+    settings
+        .post_process_providers
+        .sort_by_key(|p| default_order.get(p.id.as_str()).copied().unwrap_or(usize::MAX));
+    let new_order: Vec<String> = settings
+        .post_process_providers
+        .iter()
+        .map(|p| p.id.clone())
+        .collect();
+    if old_order != new_order {
+        changed = true;
     }
 
     changed
