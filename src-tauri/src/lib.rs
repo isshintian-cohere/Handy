@@ -28,7 +28,7 @@ use tauri_specta::{collect_commands, collect_events, Builder};
 use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
 use managers::history::HistoryManager;
-use managers::model::ModelManager;
+use managers::model::{EngineType, ModelManager};
 use managers::transcription::TranscriptionManager;
 #[cfg(unix)]
 use signal_hook::consts::{SIGUSR1, SIGUSR2};
@@ -135,6 +135,31 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     }
 
     false
+}
+
+fn maybe_prewarm_selected_model(app: &AppHandle, settings: &settings::AppSettings) {
+    if settings.model_unload_timeout == settings::ModelUnloadTimeout::Immediately {
+        return;
+    }
+
+    if settings.selected_model.trim().is_empty() {
+        return;
+    }
+
+    let model_manager = app.state::<Arc<ModelManager>>();
+    let transcription_manager = app.state::<Arc<TranscriptionManager>>();
+    let Some(model_info) = model_manager.get_model_info(&settings.selected_model) else {
+        return;
+    };
+
+    if !model_info.is_downloaded {
+        return;
+    }
+
+    if matches!(model_info.engine_type, EngineType::CohereTranscribe) {
+        log::info!("Prewarming selected Cohere Transcribe model in background");
+        transcription_manager.initiate_model_load();
+    }
 }
 
 fn initialize_core_logic(app_handle: &AppHandle) {
@@ -351,8 +376,9 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_post_process_api_key_setting,
             shortcut::change_post_process_model_setting,
             shortcut::set_post_process_provider,
-            shortcut::change_post_process_custom_cohere_enable_thinking_setting,
-            shortcut::change_post_process_custom_cohere_token_budget_setting,
+            shortcut::change_post_process_cohere_enable_thinking_setting,
+            shortcut::change_post_process_cohere_token_budget_setting,
+            shortcut::get_post_process_model_capabilities,
             shortcut::fetch_post_process_models,
             shortcut::add_post_process_prompt,
             shortcut::update_post_process_prompt,
@@ -393,6 +419,7 @@ pub fn run(cli_args: CliArgs) {
             commands::models::get_available_models,
             commands::models::get_model_info,
             commands::models::download_model,
+            commands::models::begin_manual_model_setup,
             commands::models::delete_model,
             commands::models::cancel_download,
             commands::models::set_active_model,
@@ -542,6 +569,7 @@ pub fn run(cli_args: CliArgs) {
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
 
             initialize_core_logic(&app_handle);
+            maybe_prewarm_selected_model(&app_handle, &settings);
 
             // Hide tray icon if --no-tray was passed
             if cli_args.no_tray {

@@ -29,8 +29,10 @@ export const ModelsSettings: React.FC = () => {
     downloadStats,
     verifyingModels,
     extractingModels,
+    manualSetupModels,
     loading,
     downloadModel,
+    setupModel,
     cancelDownload,
     selectModel,
     deleteModel,
@@ -76,6 +78,10 @@ export const ModelsSettings: React.FC = () => {
   }, [languageFilter, t]);
 
   const getModelStatus = (modelId: string): ModelCardStatus => {
+    const model = models.find((m: ModelInfo) => m.id === modelId);
+    if (modelId in manualSetupModels && !model?.is_downloaded) {
+      return "waiting_for_install";
+    }
     if (modelId in extractingModels) {
       return "extracting";
     }
@@ -91,11 +97,10 @@ export const ModelsSettings: React.FC = () => {
     if (modelId === currentModel) {
       return "active";
     }
-    const model = models.find((m: ModelInfo) => m.id === modelId);
     if (model?.is_downloaded) {
       return "available";
     }
-    return "downloadable";
+    return model?.manual_install ? "setup_required" : "downloadable";
   };
 
   const getDownloadProgress = (modelId: string): number | undefined => {
@@ -121,15 +126,24 @@ export const ModelsSettings: React.FC = () => {
     await downloadModel(modelId);
   };
 
+  const handleModelSetup = async (modelId: string) => {
+    await setupModel(modelId);
+  };
+
   const handleModelDelete = async (modelId: string) => {
     const model = models.find((m: ModelInfo) => m.id === modelId);
     const modelName = model?.name || modelId;
     const isActive = modelId === currentModel;
+    const isManualInstall = model?.manual_install ?? false;
 
     const confirmed = await ask(
       isActive
-        ? t("settings.models.deleteActiveConfirm", { modelName })
-        : t("settings.models.deleteConfirm", { modelName }),
+        ? isManualInstall
+          ? t("settings.models.deleteActiveManualConfirm", { modelName })
+          : t("settings.models.deleteActiveConfirm", { modelName })
+        : isManualInstall
+          ? t("settings.models.deleteManualConfirm", { modelName })
+          : t("settings.models.deleteConfirm", { modelName }),
       {
         title: t("settings.models.deleteTitle"),
         kind: "warning",
@@ -323,6 +337,7 @@ export const ModelsSettings: React.FC = () => {
                 status={getModelStatus(model.id)}
                 onSelect={handleModelSelect}
                 onDownload={handleModelDownload}
+                onSetup={handleModelSetup}
                 onDelete={handleModelDelete}
                 onCancel={handleModelCancel}
                 downloadProgress={getDownloadProgress(model.id)}
@@ -345,6 +360,7 @@ export const ModelsSettings: React.FC = () => {
                   status={getModelStatus(model.id)}
                   onSelect={handleModelSelect}
                   onDownload={handleModelDownload}
+                  onSetup={handleModelSetup}
                   onDelete={handleModelDelete}
                   onCancel={handleModelCancel}
                   downloadProgress={getDownloadProgress(model.id)}

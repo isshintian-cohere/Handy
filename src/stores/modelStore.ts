@@ -26,6 +26,7 @@ interface ModelsStore {
   downloadingModels: Record<string, true>;
   verifyingModels: Record<string, true>;
   extractingModels: Record<string, true>;
+  manualSetupModels: Record<string, true>;
   downloadProgress: Record<string, DownloadProgress>;
   downloadStats: Record<string, DownloadStats>;
   loading: boolean;
@@ -41,6 +42,7 @@ interface ModelsStore {
   checkFirstRun: () => Promise<boolean>;
   selectModel: (modelId: string) => Promise<boolean>;
   downloadModel: (modelId: string) => Promise<boolean>;
+  setupModel: (modelId: string) => Promise<boolean>;
   cancelDownload: (modelId: string) => Promise<boolean>;
   deleteModel: (modelId: string) => Promise<boolean>;
   getModelInfo: (modelId: string) => ModelInfo | undefined;
@@ -63,6 +65,7 @@ export const useModelStore = create<ModelsStore>()(
     downloadingModels: {},
     verifyingModels: {},
     extractingModels: {},
+    manualSetupModels: {},
     downloadProgress: {},
     downloadStats: {},
     loading: true,
@@ -103,6 +106,13 @@ export const useModelStore = create<ModelsStore>()(
               Object.keys(state.downloadingModels).forEach((id) => {
                 if (!backendDownloading[id] && !state.downloadProgress[id]) {
                   delete state.downloadingModels[id];
+                }
+              });
+
+              Object.keys(state.manualSetupModels).forEach((id) => {
+                const model = result.data.find((entry) => entry.id === id);
+                if (model?.is_downloaded) {
+                  delete state.manualSetupModels[id];
                 }
               });
             }),
@@ -153,6 +163,11 @@ export const useModelStore = create<ModelsStore>()(
             isFirstRun: false,
             hasAnyModels: true,
           });
+          set(
+            produce((state) => {
+              delete state.manualSetupModels[modelId];
+            }),
+          );
           return true;
         } else {
           set({ error: `Failed to switch to model: ${result.error}` });
@@ -206,6 +221,32 @@ export const useModelStore = create<ModelsStore>()(
       }
     },
 
+    setupModel: async (modelId: string) => {
+      try {
+        set({ error: null });
+        const result = await commands.beginManualModelSetup(modelId);
+        if (result.status === "ok") {
+          set(
+            produce((state) => {
+              state.manualSetupModels[modelId] = true;
+            }),
+          );
+          await get().loadModels();
+          return true;
+        } else {
+          const error = `Failed to start setup: ${result.error}`;
+          set({ error });
+          toast.error(error);
+          return false;
+        }
+      } catch (err) {
+        const error = `Failed to start setup: ${err}`;
+        set({ error });
+        toast.error(error);
+        return false;
+      }
+    },
+
     cancelDownload: async (modelId: string) => {
       try {
         set({ error: null });
@@ -239,6 +280,11 @@ export const useModelStore = create<ModelsStore>()(
         if (result.status === "ok") {
           await get().loadModels();
           await get().loadCurrentModel();
+          set(
+            produce((state) => {
+              delete state.manualSetupModels[modelId];
+            }),
+          );
           return true;
         } else {
           set({ error: `Failed to delete model: ${result.error}` });
@@ -274,6 +320,7 @@ export const useModelStore = create<ModelsStore>()(
       if (get().initialized) return;
 
       const { loadModels, loadCurrentModel, checkFirstRun } = get();
+      let manualRefreshInFlight = false;
 
       // Load initial data
       await Promise.all([loadModels(), loadCurrentModel(), checkFirstRun()]);
@@ -425,6 +472,20 @@ export const useModelStore = create<ModelsStore>()(
         get().loadModels();
         get().loadCurrentModel();
       });
+
+      setInterval(() => {
+        const pendingManualSetup = Object.keys(get().manualSetupModels);
+        if (pendingManualSetup.length === 0 || manualRefreshInFlight) {
+          return;
+        }
+
+        manualRefreshInFlight = true;
+        get()
+          .loadModels()
+          .finally(() => {
+            manualRefreshInFlight = false;
+          });
+      }, 2000);
 
       set({ initialized: true });
     },

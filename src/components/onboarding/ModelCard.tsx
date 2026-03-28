@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   Check,
   Download,
+  FolderOpen,
   Globe,
   Languages,
   Loader2,
@@ -37,6 +38,8 @@ export type ModelCardStatus =
   | "downloading"
   | "verifying"
   | "extracting"
+  | "setup_required"
+  | "waiting_for_install"
   | "switching"
   | "active"
   | "available";
@@ -49,6 +52,7 @@ interface ModelCardProps {
   className?: string;
   onSelect: (modelId: string) => void;
   onDownload?: (modelId: string) => void;
+  onSetup?: (modelId: string) => void;
   onDelete?: (modelId: string) => void;
   onCancel?: (modelId: string) => void;
   downloadProgress?: number;
@@ -64,6 +68,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
   className = "",
   onSelect,
   onDownload,
+  onSetup,
   onDelete,
   onCancel,
   downloadProgress,
@@ -73,7 +78,10 @@ const ModelCard: React.FC<ModelCardProps> = ({
   const { t } = useTranslation();
   const isFeatured = variant === "featured";
   const isClickable =
-    status === "available" || status === "active" || status === "downloadable";
+    status === "available" ||
+    status === "active" ||
+    status === "downloadable" ||
+    status === "setup_required";
 
   // Get translated model name and description
   const displayName = getTranslatedModelName(model, t);
@@ -102,6 +110,8 @@ const ModelCard: React.FC<ModelCardProps> = ({
     if (!isClickable || disabled) return;
     if (status === "downloadable" && onDownload) {
       onDownload(model.id);
+    } else if (status === "setup_required" && onSetup) {
+      onSetup(model.id);
     } else {
       onSelect(model.id);
     }
@@ -110,6 +120,11 @@ const ModelCard: React.FC<ModelCardProps> = ({
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     onDelete?.(model.id);
+  };
+
+  const handleSetup = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSetup?.(model.id);
   };
 
   return (
@@ -140,6 +155,9 @@ const ModelCard: React.FC<ModelCardProps> = ({
             </h3>
             {showRecommended && model.is_recommended && (
               <Badge variant="primary">{t("onboarding.recommended")}</Badge>
+            )}
+            {model.is_beta && (
+              <Badge variant="secondary">{t("common.beta")}</Badge>
             )}
             {status === "active" && (
               <Badge variant="primary">
@@ -194,7 +212,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
       <hr className="w-full border-mid-gray/20" />
 
       {/* Bottom row: tags + action buttons (full width) */}
-      <div className="flex items-center gap-3 w-full -mb-0.5 mt-0.5 h-5">
+      <div className="flex items-center gap-3 w-full -mb-0.5 mt-0.5 min-h-5">
         {model.supported_languages.length > 0 && (
           <div
             className="flex items-center gap-1 text-xs text-text/50"
@@ -222,6 +240,18 @@ const ModelCard: React.FC<ModelCardProps> = ({
             <Download className="w-3.5 h-3.5" />
             <span>{formatModelSize(Number(model.size_mb))}</span>
           </span>
+        )}
+        {status === "setup_required" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleSetup}
+            title={t("modelSelector.setupModel", { modelName: displayName })}
+            className="flex items-center gap-1.5 ms-auto text-logo-primary/85 hover:text-logo-primary hover:bg-logo-primary/10"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span>{t("modelSelector.setup")}</span>
+          </Button>
         )}
         {onDelete && (status === "available" || status === "active") && (
           <Button
@@ -295,6 +325,16 @@ const ModelCard: React.FC<ModelCardProps> = ({
           </div>
           <p className="text-xs text-text/50 mt-1">
             {t("modelSelector.extractingGeneric")}
+          </p>
+        </div>
+      )}
+      {status === "waiting_for_install" && (
+        <div className="w-full mt-3">
+          <div className="w-full h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
+            <div className="h-full bg-logo-primary rounded-full animate-pulse w-full" />
+          </div>
+          <p className="text-xs text-text/50 mt-1">
+            {t("modelSelector.waitingForInstall")}
           </p>
         </div>
       )}

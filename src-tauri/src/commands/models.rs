@@ -1,8 +1,18 @@
-use crate::managers::model::{ModelInfo, ModelManager};
+use crate::managers::cohere_transcribe;
+use crate::managers::model::{EngineType, ModelInfo, ModelManager};
 use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
 use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
+use serde::Serialize;
+use specta::Type;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_opener::OpenerExt;
+
+#[derive(Debug, Clone, Serialize, Type)]
+pub struct ManualModelSetupInfo {
+    pub model_id: String,
+    pub model_dir: String,
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -68,6 +78,29 @@ pub async fn delete_model(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn begin_manual_model_setup(
+    app_handle: AppHandle,
+    model_manager: State<'_, Arc<ModelManager>>,
+    model_id: String,
+) -> Result<ManualModelSetupInfo, String> {
+    let model_dir = model_manager
+        .prepare_manual_model_setup(&model_id)
+        .map_err(|e| e.to_string())?;
+    let model_dir_str = model_dir.to_string_lossy().to_string();
+
+    app_handle
+        .opener()
+        .open_path(model_dir_str.clone(), None::<String>)
+        .map_err(|e| format!("Failed to open model folder: {}", e))?;
+
+    Ok(ManualModelSetupInfo {
+        model_id,
+        model_dir: model_dir_str,
+    })
+}
+
 /// Shared logic for switching the active model, used by both the Tauri command
 /// and the tray menu handler.
 ///
@@ -103,21 +136,16 @@ pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String
     let mut settings = settings;
     settings.selected_model = model_id.to_string();
 
-    // Reset language to auto if the new model doesn't support the currently selected language.
-    // This prevents stale language settings from causing errors (e.g. Canary receiving zh-Hans)
-    // and stops downstream processing (e.g. OpenCC) from running on an irrelevant language.
-    if settings.selected_language != "auto"
-        && !model_info.supported_languages.is_empty()
-        && !model_info
-            .supported_languages
-            .contains(&settings.selected_language)
-    {
+    let normalized_language =
+        normalize_language_for_model(&model_info, &settings.selected_language);
+    if normalized_language != settings.selected_language {
         log::info!(
-            "Resetting language from '{}' to 'auto' (not supported by {})",
+            "Resetting language from '{}' to '{}' for model {}",
             settings.selected_language,
+            normalized_language,
             model_id
         );
-        settings.selected_language = "auto".to_string();
+        settings.selected_language = normalized_language;
     }
 
     write_settings(app, settings);
@@ -218,4 +246,30 @@ pub async fn cancel_download(
     model_manager
         .cancel_download(&model_id)
         .map_err(|e| e.to_string())
+}
+
+fn normalize_language_for_model(model_info: &ModelInfo, language: &str) -> String {
+    if matches!(model_info.engine_type, EngineType::CohereTranscribe) {
+        if model_info
+            .supported_languages
+            .iter()
+            .any(|lang| lang == language)
+        {
+            return language.to_string();
+        }
+
+        return cohere_transcribe::COHERE_DEFAULT_LANGUAGE.to_string();
+    }
+
+    if language != "auto"
+        && !model_info.supported_languages.is_empty()
+        && !model_info
+            .supported_languages
+            .iter()
+            .any(|lang| lang == language)
+    {
+        return "auto".to_string();
+    }
+
+    language.to_string()
 }

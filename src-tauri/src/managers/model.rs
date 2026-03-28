@@ -1,3 +1,4 @@
+use crate::managers::cohere_transcribe;
 use crate::settings::{get_settings, write_settings};
 use anyhow::Result;
 use flate2::read::GzDecoder;
@@ -26,6 +27,7 @@ pub enum EngineType {
     SenseVoice,
     GigaAM,
     Canary,
+    CohereTranscribe,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -48,7 +50,10 @@ pub struct ModelInfo {
     pub is_recommended: bool,       // Whether this is the recommended model for new users
     pub supported_languages: Vec<String>, // Languages this model can transcribe
     pub supports_language_selection: bool, // Whether the user can explicitly pick a language
-    pub is_custom: bool,            // Whether this is a user-provided custom model
+    pub supports_auto_detect: bool, // Whether the model can automatically detect language
+    pub manual_install: bool, // Whether the model is installed manually instead of downloaded in-app
+    pub is_beta: bool,        // Whether the model should be presented as beta
+    pub is_custom: bool,      // Whether this is a user-provided custom model
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -145,6 +150,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: whisper_languages.clone(),
                 supports_language_selection: true,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -173,6 +181,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: whisper_languages.clone(),
                 supports_language_selection: true,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -200,6 +211,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: whisper_languages.clone(),
                 supports_language_selection: true,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -227,6 +241,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: whisper_languages.clone(),
                 supports_language_selection: true,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -255,6 +272,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: whisper_languages,
                 supports_language_selection: true,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -283,6 +303,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -320,6 +343,9 @@ impl ModelManager {
                 is_recommended: true,
                 supported_languages: parakeet_v3_languages,
                 supports_language_selection: false,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -347,6 +373,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -376,6 +405,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -405,6 +437,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -434,6 +469,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: false,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -469,6 +507,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: sense_voice_languages,
                 supports_language_selection: true,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -499,6 +540,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: gigaam_languages,
                 supports_language_selection: false,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -533,6 +577,9 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: canary_flash_languages,
                 supports_language_selection: true,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );
@@ -570,6 +617,39 @@ impl ModelManager {
                 is_recommended: false,
                 supported_languages: canary_1b_languages,
                 supports_language_selection: true,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
+                is_custom: false,
+            },
+        );
+
+        #[cfg(target_os = "macos")]
+        available_models.insert(
+            cohere_transcribe::COHERE_MODEL_ID.to_string(),
+            ModelInfo {
+                id: cohere_transcribe::COHERE_MODEL_ID.to_string(),
+                name: cohere_transcribe::COHERE_MODEL_NAME.to_string(),
+                description: "Best accuracy across 14 languages. Beta. Manual setup required."
+                    .to_string(),
+                filename: cohere_transcribe::COHERE_MODEL_DIRNAME.to_string(),
+                url: None,
+                sha256: None,
+                size_mb: 0,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::CohereTranscribe,
+                accuracy_score: 0.95,
+                speed_score: 0.95,
+                supports_translation: false,
+                is_recommended: true,
+                supported_languages: cohere_transcribe::supported_languages(),
+                supports_language_selection: true,
+                supports_auto_detect: false,
+                manual_install: true,
+                is_beta: true,
                 is_custom: false,
             },
         );
@@ -603,13 +683,56 @@ impl ModelManager {
     }
 
     pub fn get_available_models(&self) -> Vec<ModelInfo> {
+        if let Err(e) = self.refresh_manual_install_status() {
+            warn!("Failed to refresh manual model status: {}", e);
+        }
         let models = self.available_models.lock().unwrap();
         models.values().cloned().collect()
     }
 
     pub fn get_model_info(&self, model_id: &str) -> Option<ModelInfo> {
+        if let Err(e) = self.refresh_manual_install_status() {
+            warn!("Failed to refresh manual model status: {}", e);
+        }
         let models = self.available_models.lock().unwrap();
         models.get(model_id).cloned()
+    }
+
+    pub fn prepare_manual_model_setup(&self, model_id: &str) -> Result<PathBuf> {
+        let model_info = self
+            .get_model_info(model_id)
+            .ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
+        if !model_info.manual_install {
+            anyhow::bail!("Model {} is not configured for manual setup", model_id);
+        }
+
+        match model_info.engine_type {
+            EngineType::CohereTranscribe => {
+                cohere_transcribe::prepare_manual_install_dir(&self.app_handle)
+            }
+            _ => anyhow::bail!("Manual setup is not supported for {}", model_id),
+        }
+    }
+
+    pub fn refresh_manual_install_status(&self) -> Result<()> {
+        let mut models = self.available_models.lock().unwrap();
+        for model in models.values_mut() {
+            if !model.manual_install {
+                continue;
+            }
+
+            let model_path = self.models_dir.join(&model.filename);
+            model.is_downloaded = match model.engine_type {
+                EngineType::CohereTranscribe => {
+                    cohere_transcribe::find_model_root(&model_path).is_some()
+                }
+                _ => model_path.exists(),
+            };
+            model.partial_size = 0;
+            model.is_downloading = false;
+        }
+
+        Ok(())
     }
 
     fn migrate_bundled_models(&self) -> Result<()> {
@@ -687,6 +810,19 @@ impl ModelManager {
         let mut models = self.available_models.lock().unwrap();
 
         for model in models.values_mut() {
+            if model.manual_install {
+                let model_path = self.models_dir.join(&model.filename);
+                model.is_downloaded = match model.engine_type {
+                    EngineType::CohereTranscribe => {
+                        cohere_transcribe::find_model_root(&model_path).is_some()
+                    }
+                    _ => model_path.exists(),
+                };
+                model.is_downloading = false;
+                model.partial_size = 0;
+                continue;
+            }
+
             if model.is_directory {
                 // For directory-based models, check if the directory exists
                 let model_path = self.models_dir.join(&model.filename);
@@ -890,6 +1026,9 @@ impl ModelManager {
                     is_recommended: false,
                     supported_languages: vec![],
                     supports_language_selection: true,
+                    supports_auto_detect: true,
+                    manual_install: false,
+                    is_beta: false,
                     is_custom: true,
                 },
             );
@@ -956,6 +1095,13 @@ impl ModelManager {
 
         let model_info =
             model_info.ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
+
+        if model_info.manual_install {
+            anyhow::bail!(
+                "{} is installed manually. Use the setup flow instead of in-app download.",
+                model_info.name
+            );
+        }
 
         let url = model_info
             .url
@@ -1380,6 +1526,22 @@ impl ModelManager {
             .models_dir
             .join(format!("{}.partial", &model_info.filename));
 
+        if model_info.manual_install {
+            return match model_info.engine_type {
+                EngineType::CohereTranscribe => cohere_transcribe::find_model_root(&model_path)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Complete Cohere Transcribe model files not found in {}",
+                            model_path.display()
+                        )
+                    }),
+                _ => Err(anyhow::anyhow!(
+                    "Manual install resolution is not implemented for {}",
+                    model_id
+                )),
+            };
+        }
+
         if model_info.is_directory {
             // For directory-based models, ensure the directory exists and is complete
             if model_path.exists() && model_path.is_dir() && !partial_path.exists() {
@@ -1483,6 +1645,9 @@ mod tests {
                 is_recommended: false,
                 supported_languages: vec!["en".to_string()],
                 supports_language_selection: true,
+                supports_auto_detect: true,
+                manual_install: false,
+                is_beta: false,
                 is_custom: false,
             },
         );

@@ -16,9 +16,12 @@ mod tauri_impl;
 use log::{error, info, warn};
 use serde::Serialize;
 use specta::Type;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
+use crate::managers::cohere_transcribe;
+use crate::managers::model::{EngineType, ModelManager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
@@ -529,7 +532,23 @@ pub fn change_translate_to_english_setting(app: AppHandle, enabled: bool) -> Res
 #[specta::specta]
 pub fn change_selected_language_setting(app: AppHandle, language: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.selected_language = language;
+    let normalized_language = app
+        .try_state::<Arc<ModelManager>>()
+        .and_then(|model_manager| model_manager.get_model_info(&settings.selected_model))
+        .map(|model_info| {
+            if matches!(model_info.engine_type, EngineType::CohereTranscribe)
+                && !model_info
+                    .supported_languages
+                    .iter()
+                    .any(|supported| supported == &language)
+            {
+                cohere_transcribe::COHERE_DEFAULT_LANGUAGE.to_string()
+            } else {
+                language.clone()
+            }
+        })
+        .unwrap_or(language);
+    settings.selected_language = normalized_language;
     settings::write_settings(&app, settings);
     Ok(())
 }

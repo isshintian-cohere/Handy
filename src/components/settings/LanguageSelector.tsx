@@ -9,12 +9,14 @@ interface LanguageSelectorProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   supportedLanguages?: string[];
+  supportsAutoDetect?: boolean;
 }
 
 export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   descriptionMode = "tooltip",
   grouped = false,
   supportedLanguages,
+  supportsAutoDetect = true,
 }) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, resetSetting, isUpdating } = useSettings();
@@ -24,6 +26,10 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const selectedLanguage = getSetting("selected_language") || "auto";
+  const effectiveSelectedLanguage =
+    !supportsAutoDetect && selectedLanguage === "auto"
+      ? "en"
+      : selectedLanguage;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -50,12 +56,15 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
 
   const availableLanguages = useMemo(() => {
     if (!supportedLanguages || supportedLanguages.length === 0)
-      return LANGUAGES;
+      return supportsAutoDetect
+        ? LANGUAGES
+        : LANGUAGES.filter((lang) => lang.value !== "auto");
     return LANGUAGES.filter(
       (lang) =>
-        lang.value === "auto" || supportedLanguages.includes(lang.value),
+        (supportsAutoDetect && lang.value === "auto") ||
+        supportedLanguages.includes(lang.value),
     );
-  }, [supportedLanguages]);
+  }, [supportedLanguages, supportsAutoDetect]);
 
   const filteredLanguages = useMemo(
     () =>
@@ -66,7 +75,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   );
 
   const selectedLanguageName =
-    LANGUAGES.find((lang) => lang.value === selectedLanguage)?.label ||
+    LANGUAGES.find((lang) => lang.value === effectiveSelectedLanguage)?.label ||
     t("settings.general.language.auto");
 
   const handleLanguageSelect = async (languageCode: string) => {
@@ -101,7 +110,11 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   return (
     <SettingContainer
       title={t("settings.general.language.title")}
-      description={t("settings.general.language.description")}
+      description={
+        supportsAutoDetect
+          ? t("settings.general.language.description")
+          : t("settings.general.language.descriptionExplicit")
+      }
       descriptionMode={descriptionMode}
       grouped={grouped}
     >
@@ -161,7 +174,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
                       key={language.value}
                       type="button"
                       className={`w-full px-2 py-1 text-sm text-start hover:bg-logo-primary/10 transition-colors duration-150 ${
-                        selectedLanguage === language.value
+                        effectiveSelectedLanguage === language.value
                           ? "bg-logo-primary/20 text-logo-primary font-semibold"
                           : ""
                       }`}

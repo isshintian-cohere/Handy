@@ -1,5 +1,6 @@
 use crate::audio_toolkit::{apply_custom_words, filter_transcription_output};
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::cohere_transcribe::{self, CohereTranscribeEngine};
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{
     get_settings, ModelUnloadTimeout, OrtAcceleratorSetting, WhisperAcceleratorSetting,
@@ -43,6 +44,7 @@ enum LoadedEngine {
     SenseVoice(SenseVoiceModel),
     GigaAM(GigaAMModel),
     Canary(CanaryModel),
+    CohereTranscribe(CohereTranscribeEngine),
 }
 
 /// RAII guard that clears the `is_loading` flag and notifies waiters on drop.
@@ -367,6 +369,16 @@ impl TranscriptionManager {
                 })?;
                 LoadedEngine::Canary(engine)
             }
+            EngineType::CohereTranscribe => {
+                let engine =
+                    CohereTranscribeEngine::load(&self.app_handle, &model_path).map_err(|e| {
+                        let error_msg =
+                            format!("Failed to load Cohere Transcribe model {}: {}", model_id, e);
+                        emit_loading_failed(&error_msg);
+                        anyhow::anyhow!(error_msg)
+                    })?;
+                LoadedEngine::CohereTranscribe(engine)
+            }
         };
 
         // Update the current engine and model ID
@@ -464,15 +476,29 @@ impl TranscriptionManager {
 
         // Get current settings for configuration
         let settings = get_settings(&self.app_handle);
+        let current_model_info = self.model_manager.get_model_info(&settings.selected_model);
+        let supports_auto_detect = current_model_info
+            .as_ref()
+            .map(|info| info.supports_auto_detect)
+            .unwrap_or(true);
+        let effective_translate = settings.translate_to_english
+            && current_model_info
+                .as_ref()
+                .map(|info| info.supports_translation)
+                .unwrap_or(false);
 
         // Validate selected language against the model's supported languages.
-        // If the language isn't supported, fall back to "auto" to prevent errors.
+        // If the language isn't supported, fall back to auto-detect or the
+        // engine-specific default to prevent errors.
         let validated_language = if settings.selected_language == "auto" {
-            "auto".to_string()
+            if supports_auto_detect {
+                "auto".to_string()
+            } else {
+                cohere_transcribe::COHERE_DEFAULT_LANGUAGE.to_string()
+            }
         } else {
-            let is_supported = self
-                .model_manager
-                .get_model_info(&settings.selected_model)
+            let is_supported = current_model_info
+                .as_ref()
                 .map(|info| {
                     info.supported_languages.is_empty()
                         || info
@@ -485,10 +511,19 @@ impl TranscriptionManager {
                 settings.selected_language.clone()
             } else {
                 warn!(
-                    "Language '{}' not supported by current model, falling back to auto-detect",
-                    settings.selected_language
+                    "Language '{}' not supported by current model, falling back to {}",
+                    settings.selected_language,
+                    if supports_auto_detect {
+                        "auto-detect"
+                    } else {
+                        cohere_transcribe::COHERE_DEFAULT_LANGUAGE
+                    }
                 );
-                "auto".to_string()
+                if supports_auto_detect {
+                    "auto".to_string()
+                } else {
+                    cohere_transcribe::COHERE_DEFAULT_LANGUAGE.to_string()
+                }
             }
         };
 
@@ -532,7 +567,7 @@ impl TranscriptionManager {
 
                             let params = WhisperInferenceParams {
                                 language: whisper_language,
-                                translate: settings.translate_to_english,
+                                translate: effective_translate,
                                 initial_prompt: if settings.custom_words.is_empty() {
                                     None
                                 } else {
@@ -594,12 +629,15 @@ impl TranscriptionManager {
                             };
                             let options = TranscribeOptions {
                                 language: lang,
-                                translate: settings.translate_to_english,
+                                translate: effective_translate,
                             };
                             canary_engine
                                 .transcribe(&audio, &options)
                                 .map_err(|e| anyhow::anyhow!("Canary transcription failed: {}", e))
                         }
+                        LoadedEngine::CohereTranscribe(cohere_engine) => cohere_engine
+                            .transcribe(&audio, &validated_language)
+                            .map_err(|e| anyhow::anyhow!("Cohere transcription failed: {}", e)),
                     }
                 },
             ));
@@ -679,7 +717,7 @@ impl TranscriptionManager {
         );
 
         let et = std::time::Instant::now();
-        let translation_note = if settings.translate_to_english {
+        let translation_note = if effective_translate {
             " (translated)"
         } else {
             ""

@@ -16,16 +16,22 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
   const {
     models,
     downloadModel,
+    setupModel,
     selectModel,
     downloadingModels,
     verifyingModels,
     extractingModels,
+    manualSetupModels,
     downloadProgress,
     downloadStats,
   } = useModelStore();
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
 
-  const isDownloading = selectedModelId !== null;
+  const isDownloading =
+    selectedModelId !== null &&
+    (selectedModelId in downloadingModels ||
+      selectedModelId in verifyingModels ||
+      selectedModelId in extractingModels);
 
   // Watch for the selected model to finish downloading + verifying + extracting
   useEffect(() => {
@@ -35,12 +41,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
     const stillDownloading = selectedModelId in downloadingModels;
     const stillVerifying = selectedModelId in verifyingModels;
     const stillExtracting = selectedModelId in extractingModels;
+    const stillWaitingForManualInstall = selectedModelId in manualSetupModels;
 
     if (
       model?.is_downloaded &&
       !stillDownloading &&
       !stillVerifying &&
-      !stillExtracting
+      !stillExtracting &&
+      !stillWaitingForManualInstall
     ) {
       // Model is ready — select it and transition
       selectModel(selectedModelId).then((success) => {
@@ -58,26 +66,34 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
     downloadingModels,
     verifyingModels,
     extractingModels,
+    manualSetupModels,
     selectModel,
     onModelSelected,
   ]);
 
   const handleDownloadModel = async (modelId: string) => {
+    const model = models.find((entry) => entry.id === modelId);
     setSelectedModelId(modelId);
 
-    // Error toast is handled centrally by the model-download-failed event listener
-    // in modelStore — no toast here to avoid duplicates.
-    const success = await downloadModel(modelId);
+    // Error toast is handled centrally by the model store for both manual setup
+    // failures and in-app download failures.
+    const success = model?.manual_install
+      ? await setupModel(modelId)
+      : await downloadModel(modelId);
     if (!success) {
       setSelectedModelId(null);
     }
   };
 
   const getModelStatus = (modelId: string): ModelCardStatus => {
+    const model = models.find((m) => m.id === modelId);
+    if (modelId in manualSetupModels && !model?.is_downloaded) {
+      return "waiting_for_install";
+    }
     if (modelId in extractingModels) return "extracting";
     if (modelId in verifyingModels) return "verifying";
     if (modelId in downloadingModels) return "downloading";
-    return "downloadable";
+    return model?.manual_install ? "setup_required" : "downloadable";
   };
 
   const getModelDownloadProgress = (modelId: string): number | undefined => {
@@ -111,6 +127,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
                 disabled={isDownloading}
                 onSelect={handleDownloadModel}
                 onDownload={handleDownloadModel}
+                onSetup={handleDownloadModel}
                 downloadProgress={getModelDownloadProgress(model.id)}
                 downloadSpeed={getModelDownloadSpeed(model.id)}
               />
@@ -131,6 +148,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
                 disabled={isDownloading}
                 onSelect={handleDownloadModel}
                 onDownload={handleDownloadModel}
+                onSetup={handleDownloadModel}
                 downloadProgress={getModelDownloadProgress(model.id)}
                 downloadSpeed={getModelDownloadSpeed(model.id)}
               />
