@@ -77,9 +77,10 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
 
     // Error toast is handled centrally by the model store for both manual setup
     // failures and in-app download failures.
-    const success = model?.manual_install
-      ? await setupModel(modelId)
-      : await downloadModel(modelId);
+    const success =
+      model?.engine_type === "CohereTranscribe"
+        ? await setupModel(modelId)
+        : await downloadModel(modelId);
     if (!success) {
       setSelectedModelId(null);
     }
@@ -93,7 +94,9 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
     if (modelId in extractingModels) return "extracting";
     if (modelId in verifyingModels) return "verifying";
     if (modelId in downloadingModels) return "downloading";
-    return model?.manual_install ? "setup_required" : "downloadable";
+    return model?.engine_type === "CohereTranscribe"
+      ? "setup_required"
+      : "downloadable";
   };
 
   const getModelDownloadProgress = (modelId: string): number | undefined => {

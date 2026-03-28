@@ -156,7 +156,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
             {showRecommended && model.is_recommended && (
               <Badge variant="primary">{t("onboarding.recommended")}</Badge>
             )}
-            {model.is_beta && (
+            {model.engine_type === "CohereTranscribe" && (
               <Badge variant="secondary">{t("common.beta")}</Badge>
             )}
             {status === "active" && (

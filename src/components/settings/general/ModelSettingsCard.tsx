@@ -14,7 +14,8 @@ export const ModelSettingsCard: React.FC = () => {
 
   const supportsLanguageSelection =
     currentModelInfo?.supports_language_selection ?? false;
-  const supportsAutoDetect = currentModelInfo?.supports_auto_detect ?? true;
+  const supportsAutoDetect =
+    currentModelInfo?.engine_type !== "CohereTranscribe";
   const supportsTranslation = currentModelInfo?.supports_translation ?? false;
   const hasAnySettings = supportsLanguageSelection || supportsTranslation;
 

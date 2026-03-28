@@ -1,6 +1,6 @@
 use crate::audio_toolkit::{apply_custom_words, filter_transcription_output};
 use crate::managers::audio::AudioRecordingManager;
-use crate::managers::cohere_transcribe::{self, CohereTranscribeEngine};
+use crate::managers::cohere_transcribe::CohereTranscribeEngine;
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{
     get_settings, ModelUnloadTimeout, OrtAcceleratorSetting, WhisperAcceleratorSetting,
@@ -414,6 +414,28 @@ impl TranscriptionManager {
         Ok(())
     }
 
+    /// Pre-warm the selected model if it benefits from eager loading (e.g.
+    /// CohereTranscribe spawns a Python worker that takes time to start).
+    pub fn maybe_prewarm(&self) {
+        let settings = get_settings(&self.app_handle);
+        if settings.model_unload_timeout == crate::settings::ModelUnloadTimeout::Immediately {
+            return;
+        }
+        if settings.selected_model.trim().is_empty() {
+            return;
+        }
+        let Some(model_info) = self.model_manager.get_model_info(&settings.selected_model) else {
+            return;
+        };
+        if !model_info.is_downloaded {
+            return;
+        }
+        if matches!(model_info.engine_type, EngineType::CohereTranscribe) {
+            info!("Prewarming selected Cohere Transcribe model in background");
+            self.initiate_model_load();
+        }
+    }
+
     /// Kicks off the model loading in a background thread if it's not already loaded
     pub fn initiate_model_load(&self) {
         let mut is_loading = self.is_loading.lock().unwrap();
@@ -477,55 +499,20 @@ impl TranscriptionManager {
         // Get current settings for configuration
         let settings = get_settings(&self.app_handle);
         let current_model_info = self.model_manager.get_model_info(&settings.selected_model);
-        let supports_auto_detect = current_model_info
+
+        let validated_language = current_model_info
             .as_ref()
-            .map(|info| info.supports_auto_detect)
-            .unwrap_or(true);
-        let effective_translate = settings.translate_to_english
-            && current_model_info
-                .as_ref()
-                .map(|info| info.supports_translation)
-                .unwrap_or(false);
-
-        // Validate selected language against the model's supported languages.
-        // If the language isn't supported, fall back to auto-detect or the
-        // engine-specific default to prevent errors.
-        let validated_language = if settings.selected_language == "auto" {
-            if supports_auto_detect {
-                "auto".to_string()
-            } else {
-                cohere_transcribe::COHERE_DEFAULT_LANGUAGE.to_string()
-            }
-        } else {
-            let is_supported = current_model_info
-                .as_ref()
-                .map(|info| {
-                    info.supported_languages.is_empty()
-                        || info
-                            .supported_languages
-                            .contains(&settings.selected_language)
-                })
-                .unwrap_or(true);
-
-            if is_supported {
-                settings.selected_language.clone()
-            } else {
-                warn!(
-                    "Language '{}' not supported by current model, falling back to {}",
-                    settings.selected_language,
-                    if supports_auto_detect {
-                        "auto-detect"
-                    } else {
-                        cohere_transcribe::COHERE_DEFAULT_LANGUAGE
-                    }
-                );
-                if supports_auto_detect {
-                    "auto".to_string()
-                } else {
-                    cohere_transcribe::COHERE_DEFAULT_LANGUAGE.to_string()
+            .map(|info| {
+                let normalized = info.normalize_language(&settings.selected_language);
+                if normalized != settings.selected_language {
+                    warn!(
+                        "Language '{}' not supported by current model, falling back to '{}'",
+                        settings.selected_language, normalized
+                    );
                 }
-            }
-        };
+                normalized
+            })
+            .unwrap_or_else(|| settings.selected_language.clone());
 
         // Perform transcription with the appropriate engine.
         // We use catch_unwind to prevent engine panics from poisoning the mutex,
@@ -567,7 +554,7 @@ impl TranscriptionManager {
 
                             let params = WhisperInferenceParams {
                                 language: whisper_language,
-                                translate: effective_translate,
+                                translate: settings.translate_to_english,
                                 initial_prompt: if settings.custom_words.is_empty() {
                                     None
                                 } else {
@@ -629,7 +616,7 @@ impl TranscriptionManager {
                             };
                             let options = TranscribeOptions {
                                 language: lang,
-                                translate: effective_translate,
+                                translate: settings.translate_to_english,
                             };
                             canary_engine
                                 .transcribe(&audio, &options)
@@ -717,7 +704,7 @@ impl TranscriptionManager {
         );
 
         let et = std::time::Instant::now();
-        let translation_note = if effective_translate {
+        let translation_note = if settings.translate_to_english {
             " (translated)"
         } else {
             ""

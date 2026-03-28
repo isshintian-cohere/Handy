@@ -203,9 +203,9 @@
     },
     "models": {
       "title": "Transcription Models",
-      "description": "Select a transcription model or add more models. Some models download in-app, while beta models may require manual setup.",
-      "yourModels": "Installed Models",
-      "availableModels": "Available Models",
+      "description": "Select a transcription model or download additional models. Different models offer varying levels of accuracy and speed.",
+      "yourModels": "Downloaded Models",
+      "availableModels": "Available to Download",
       "downloaded": "Downloaded",
       "available": "Available to Download",
       "deleteConfirm": "Are you sure you want to delete {{modelName}}? You will need to download it again to use it.",

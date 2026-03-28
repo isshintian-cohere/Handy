@@ -1,5 +1,4 @@
-use crate::managers::cohere_transcribe;
-use crate::managers::model::{EngineType, ModelInfo, ModelManager};
+use crate::managers::model::{ModelInfo, ModelManager};
 use crate::managers::transcription::{ModelStateEvent, TranscriptionManager};
 use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
 use serde::Serialize;
@@ -19,6 +18,7 @@ pub struct ManualModelSetupInfo {
 pub async fn get_available_models(
     model_manager: State<'_, Arc<ModelManager>>,
 ) -> Result<Vec<ModelInfo>, String> {
+    let _ = model_manager.refresh_model_status();
     Ok(model_manager.get_available_models())
 }
 
@@ -136,8 +136,7 @@ pub fn switch_active_model(app: &AppHandle, model_id: &str) -> Result<(), String
     let mut settings = settings;
     settings.selected_model = model_id.to_string();
 
-    let normalized_language =
-        normalize_language_for_model(&model_info, &settings.selected_language);
+    let normalized_language = model_info.normalize_language(&settings.selected_language);
     if normalized_language != settings.selected_language {
         log::info!(
             "Resetting language from '{}' to '{}' for model {}",
@@ -248,28 +247,3 @@ pub async fn cancel_download(
         .map_err(|e| e.to_string())
 }
 
-fn normalize_language_for_model(model_info: &ModelInfo, language: &str) -> String {
-    if matches!(model_info.engine_type, EngineType::CohereTranscribe) {
-        if model_info
-            .supported_languages
-            .iter()
-            .any(|lang| lang == language)
-        {
-            return language.to_string();
-        }
-
-        return cohere_transcribe::COHERE_DEFAULT_LANGUAGE.to_string();
-    }
-
-    if language != "auto"
-        && !model_info.supported_languages.is_empty()
-        && !model_info
-            .supported_languages
-            .iter()
-            .any(|lang| lang == language)
-    {
-        return "auto".to_string();
-    }
-
-    language.to_string()
-}

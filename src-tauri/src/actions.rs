@@ -13,7 +13,7 @@ use crate::utils::{
 };
 use crate::TranscriptionCoordinator;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -158,7 +158,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                             None
                         } else {
                             let result = strip_invisible_chars(&result);
-                            info!(
+                            debug!(
                                 "Apple Intelligence post-processing succeeded. Output length: {} chars",
                                 result.len()
                             );
@@ -211,7 +211,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                             json.get(TRANSCRIPTION_FIELD).and_then(|t| t.as_str())
                         {
                             let result = strip_invisible_chars(transcription_value);
-                            info!(
+                            debug!(
                                 "Structured output post-processing succeeded for provider '{}'. Output length: {} chars",
                                 provider.id,
                                 result.len()
@@ -260,7 +260,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     {
         Ok(Some(content)) => {
             let content = strip_invisible_chars(&content);
-            info!(
+            debug!(
                 "LLM post-processing succeeded for provider '{}'. Output length: {} chars",
                 provider.id,
                 content.len()

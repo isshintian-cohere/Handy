@@ -100,7 +100,9 @@ export const ModelsSettings: React.FC = () => {
     if (model?.is_downloaded) {
       return "available";
     }
-    return model?.manual_install ? "setup_required" : "downloadable";
+    return model?.engine_type === "CohereTranscribe"
+      ? "setup_required"
+      : "downloadable";
   };
 
   const getDownloadProgress = (modelId: string): number | undefined => {
@@ -134,7 +136,7 @@ export const ModelsSettings: React.FC = () => {
     const model = models.find((m: ModelInfo) => m.id === modelId);
     const modelName = model?.name || modelId;
     const isActive = modelId === currentModel;
-    const isManualInstall = model?.manual_install ?? false;
+    const isManualInstall = model?.engine_type === "CohereTranscribe";
 
     const confirmed = await ask(
       isActive
