@@ -23,8 +23,7 @@ const COHERE_SETUP_README: &str = "README.txt";
 const COHERE_REQUIREMENTS_RESOURCE: &str = "resources/scripts/cohere_transcribe_requirements.txt";
 const COHERE_WORKER_RESOURCE: &str = "resources/scripts/cohere_transcribe_worker.py";
 const COHERE_SAMPLE_RATE: u32 = 16_000;
-const COHERE_COMPAT_REQUIREMENTS: &str =
-    "numpy\ntransformers>=4.56,<5.3,!=5.0.*,!=5.1.*\ntorch\nsentencepiece\nprotobuf\n";
+const COHERE_MIN_PYTHON_MINOR: u32 = 10;
 
 pub fn supported_languages() -> Vec<String> {
     vec![
@@ -314,14 +313,8 @@ fn ensure_runtime(app: &AppHandle) -> Result<RuntimePaths> {
             tauri::path::BaseDirectory::Resource,
         )
         .map_err(|e| anyhow::anyhow!("Failed to resolve Cohere requirements path: {}", e))?;
-    let native_requirements = fs::read_to_string(&requirements_path)?;
+    let requirements_contents = fs::read_to_string(&requirements_path)?;
     let system_python = find_system_python()?;
-    let requirements_contents =
-        if system_python.major > 3 || (system_python.major == 3 && system_python.minor >= 10) {
-            native_requirements
-        } else {
-            COHERE_COMPAT_REQUIREMENTS.to_string()
-        };
     let expected_python = (system_python.major, system_python.minor);
     let existing_python = detect_python_version(&python_path);
     let should_recreate_venv = python_path.exists() && existing_python != Some(expected_python);
@@ -376,24 +369,34 @@ fn ensure_runtime(app: &AppHandle) -> Result<RuntimePaths> {
 }
 
 fn find_system_python() -> Result<PythonCandidate> {
-    for candidate in [
-        "python3.12",
-        "python3.11",
-        "python3.10",
-        "python3",
-        "python",
-    ] {
+    for candidate in ["python3.12", "python3.11", "python3.10"] {
         if let Some((major, minor)) = detect_python_version(candidate) {
-            return Ok(PythonCandidate {
-                executable: candidate.to_string(),
-                major,
-                minor,
-            });
+            if major == 3 && minor >= COHERE_MIN_PYTHON_MINOR {
+                return Ok(PythonCandidate {
+                    executable: candidate.to_string(),
+                    major,
+                    minor,
+                });
+            }
+        }
+    }
+
+    // Fallback: unversioned names that may resolve to 3.10+.
+    for candidate in ["python3", "python"] {
+        if let Some((major, minor)) = detect_python_version(candidate) {
+            if major == 3 && minor >= COHERE_MIN_PYTHON_MINOR {
+                return Ok(PythonCandidate {
+                    executable: candidate.to_string(),
+                    major,
+                    minor,
+                });
+            }
         }
     }
 
     anyhow::bail!(
-        "Python 3 is required for Cohere Transcribe beta. Install Python 3 and try again."
+        "Python 3.10 or later is required for Cohere Transcribe. \
+         Install Python 3.10+ and try again."
     )
 }
 
