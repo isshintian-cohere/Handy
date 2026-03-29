@@ -369,27 +369,25 @@ fn ensure_runtime(app: &AppHandle) -> Result<RuntimePaths> {
 }
 
 fn find_system_python() -> Result<PythonCandidate> {
-    for candidate in ["python3.12", "python3.11", "python3.10"] {
-        if let Some((major, minor)) = detect_python_version(candidate) {
-            if major == 3 && minor >= COHERE_MIN_PYTHON_MINOR {
-                return Ok(PythonCandidate {
-                    executable: candidate.to_string(),
-                    major,
-                    minor,
-                });
-            }
+    let versioned = ["python3.12", "python3.11", "python3.10"];
+    let unversioned = ["python3", "python"];
+
+    // First try bare names from PATH (works in dev / terminal-launched builds).
+    for candidate in versioned.iter().chain(unversioned.iter()) {
+        if let Some(c) = check_python_candidate(candidate) {
+            return Ok(c);
         }
     }
 
-    // Fallback: unversioned names that may resolve to 3.10+.
-    for candidate in ["python3", "python"] {
-        if let Some((major, minor)) = detect_python_version(candidate) {
-            if major == 3 && minor >= COHERE_MIN_PYTHON_MINOR {
-                return Ok(PythonCandidate {
-                    executable: candidate.to_string(),
-                    major,
-                    minor,
-                });
+    // GUI .app bundles on macOS inherit a minimal PATH that excludes most
+    // user-installed Pythons. Probe well-known directories explicitly.
+    for dir in wellknown_python_dirs() {
+        for name in versioned.iter().chain(unversioned.iter()) {
+            let full = dir.join(name);
+            if full.exists() {
+                if let Some(c) = check_python_candidate(&full) {
+                    return Ok(c);
+                }
             }
         }
     }
@@ -398,6 +396,72 @@ fn find_system_python() -> Result<PythonCandidate> {
         "Python 3.10 or later is required for Cohere Transcribe. \
          Install Python 3.10+ and try again."
     )
+}
+
+fn check_python_candidate(command: impl AsRef<OsStr> + std::fmt::Debug) -> Option<PythonCandidate> {
+    let (major, minor) = detect_python_version(&command)?;
+    if major == 3 && minor >= COHERE_MIN_PYTHON_MINOR {
+        let executable = command
+            .as_ref()
+            .to_str()
+            .unwrap_or_default()
+            .to_string();
+        Some(PythonCandidate {
+            executable,
+            major,
+            minor,
+        })
+    } else {
+        None
+    }
+}
+
+/// Returns well-known directories where Python may be installed on macOS /
+/// Linux, ordered by preference (newest / most common first).
+fn wellknown_python_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+
+    if let Ok(home) = std::env::var("HOME").map(PathBuf::from) {
+        // uv / pipx: ~/.local/bin
+        dirs.push(home.join(".local/bin"));
+
+        // uv managed installs: ~/.local/share/uv/python/cpython-3.*/bin
+        if let Ok(entries) = fs::read_dir(home.join(".local/share/uv/python")) {
+            let mut uv_bins: Vec<PathBuf> = entries
+                .flatten()
+                .filter_map(|e| {
+                    let p = e.path();
+                    if p.is_dir() {
+                        Some(p.join("bin"))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            uv_bins.sort();
+            uv_bins.reverse(); // prefer newer versions
+            dirs.extend(uv_bins);
+        }
+
+        // pyenv: ~/.pyenv/shims
+        dirs.push(home.join(".pyenv/shims"));
+
+        // mise / rtx: ~/.local/share/mise/shims
+        dirs.push(home.join(".local/share/mise/shims"));
+    }
+
+    // Homebrew (Apple Silicon then Intel)
+    dirs.push(PathBuf::from("/opt/homebrew/bin"));
+    dirs.push(PathBuf::from("/usr/local/bin"));
+
+    // python.org framework installs
+    for minor in (COHERE_MIN_PYTHON_MINOR..=14).rev() {
+        dirs.push(PathBuf::from(format!(
+            "/Library/Frameworks/Python.framework/Versions/3.{minor}/bin"
+        )));
+    }
+
+    dirs
 }
 
 fn detect_python_version(command: impl AsRef<OsStr>) -> Option<(u32, u32)> {
