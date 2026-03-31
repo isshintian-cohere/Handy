@@ -16,6 +16,9 @@ export const ModelSettingsCard: React.FC = () => {
     currentModelInfo?.supports_language_selection ?? false;
   const supportsAutoDetect =
     currentModelInfo?.engine_type !== "CohereTranscribe";
+  const fallbackLanguage = currentModelInfo?.supported_languages.find(
+    (language) => language !== "auto",
+  );
   const supportsTranslation = currentModelInfo?.supports_translation ?? false;
   const hasAnySettings = supportsLanguageSelection || supportsTranslation;
 
@@ -36,6 +39,7 @@ export const ModelSettingsCard: React.FC = () => {
           grouped={true}
           supportedLanguages={currentModelInfo.supported_languages}
           supportsAutoDetect={supportsAutoDetect}
+          fallbackLanguage={fallbackLanguage}
         />
       )}
       {supportsTranslation && (

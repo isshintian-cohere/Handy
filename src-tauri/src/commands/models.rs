@@ -18,7 +18,9 @@ pub struct ManualModelSetupInfo {
 pub async fn get_available_models(
     model_manager: State<'_, Arc<ModelManager>>,
 ) -> Result<Vec<ModelInfo>, String> {
-    let _ = model_manager.refresh_model_status();
+    model_manager
+        .refresh_model_status()
+        .map_err(|e| format!("Failed to refresh model status: {}", e))?;
     Ok(model_manager.get_available_models())
 }
 
@@ -246,4 +248,3 @@ pub async fn cancel_download(
         .cancel_download(&model_id)
         .map_err(|e| e.to_string())
 }
-

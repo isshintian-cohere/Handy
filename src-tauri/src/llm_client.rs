@@ -78,7 +78,7 @@ struct ChatMessageResponse {
     content: Option<String>,
 }
 
-/// Cohere v2 Chat API response: message.content is array of { type, text }
+/// Cohere v2 Chat API response: message.content is an array of typed content blocks
 #[derive(Debug, Deserialize)]
 struct CohereChatResponse {
     message: CohereMessage,
@@ -101,6 +101,33 @@ struct CohereContentBlock {
     #[serde(rename = "type")]
     block_type: Option<String>,
     text: Option<String>,
+}
+
+impl CohereContentBlock {
+    fn into_user_text(self) -> Option<String> {
+        match self.block_type {
+            Some(block_type) if block_type.eq_ignore_ascii_case("text") => self.text,
+            Some(_) => None,
+            None => None,
+        }
+    }
+}
+
+fn extract_cohere_text(content: CohereContent) -> Option<String> {
+    match content {
+        CohereContent::String(text) => Some(text),
+        CohereContent::Array(blocks) => {
+            let parts: Vec<String> = blocks
+                .into_iter()
+                .filter_map(CohereContentBlock::into_user_text)
+                .collect();
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join("\n"))
+            }
+        }
+    }
 }
 
 fn is_cohere_host(url: &Url) -> bool {
@@ -339,18 +366,7 @@ pub async fn send_chat_completion_with_schema(
     if is_cohere {
         let completion: CohereChatResponse = serde_json::from_str(&response_text)
             .map_err(|e| format!("Failed to parse Cohere API response: {}", e))?;
-        let text = match completion.message.content {
-            CohereContent::String(s) => Some(s),
-            CohereContent::Array(blocks) => {
-                let parts: Vec<String> = blocks.into_iter().filter_map(|b| b.text).collect();
-                if parts.is_empty() {
-                    None
-                } else {
-                    Some(parts.join("\n"))
-                }
-            }
-        };
-        Ok(text)
+        Ok(extract_cohere_text(completion.message.content))
     } else {
         let completion: ChatCompletionResponse = serde_json::from_str(&response_text)
             .map_err(|e| format!("Failed to parse API response: {}", e))?;
@@ -438,6 +454,7 @@ pub async fn fetch_models(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn cohere_provider() -> PostProcessProvider {
         PostProcessProvider {
@@ -474,6 +491,30 @@ mod tests {
         assert_eq!(
             url,
             "https://api.cohere.com/v1/models?endpoint=chat&page_size=1000"
+        );
+    }
+
+    #[test]
+    fn extracts_only_user_visible_cohere_text_blocks() {
+        let response: CohereChatResponse = serde_json::from_value(json!({
+            "message": {
+                "content": [
+                    {
+                        "type": "thinking",
+                        "text": "internal reasoning"
+                    },
+                    {
+                        "type": "text",
+                        "text": "Final answer"
+                    }
+                ]
+            }
+        }))
+        .expect("valid cohere response");
+
+        assert_eq!(
+            extract_cohere_text(response.message.content),
+            Some("Final answer".to_string())
         );
     }
 }

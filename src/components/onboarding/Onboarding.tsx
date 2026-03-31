@@ -31,7 +31,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
     selectedModelId !== null &&
     (selectedModelId in downloadingModels ||
       selectedModelId in verifyingModels ||
-      selectedModelId in extractingModels);
+      selectedModelId in extractingModels ||
+      selectedModelId in manualSetupModels);
 
   // Watch for the selected model to finish downloading + verifying + extracting
   useEffect(() => {

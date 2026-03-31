@@ -753,9 +753,12 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
         .iter()
         .map(|p| p.id.clone())
         .collect();
-    settings
-        .post_process_providers
-        .sort_by_key(|p| default_order.get(p.id.as_str()).copied().unwrap_or(usize::MAX));
+    settings.post_process_providers.sort_by_key(|p| {
+        default_order
+            .get(p.id.as_str())
+            .copied()
+            .unwrap_or(usize::MAX)
+    });
     let new_order: Vec<String> = settings
         .post_process_providers
         .iter()
@@ -794,24 +797,24 @@ fn migrate_custom_cohere_provider(settings: &mut AppSettings) -> bool {
         changed = true;
     }
 
-    if settings
+    let dedicated_api_key_empty = settings
         .post_process_api_keys
         .get(COHERE_PROVIDER_ID)
-        .map(|value| value != &custom_api_key)
-        .unwrap_or(true)
-    {
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(true);
+    if dedicated_api_key_empty && !custom_api_key.trim().is_empty() {
         settings
             .post_process_api_keys
             .insert(COHERE_PROVIDER_ID.to_string(), custom_api_key.clone());
         changed = true;
     }
 
-    if settings
+    let dedicated_model_empty = settings
         .post_process_models
         .get(COHERE_PROVIDER_ID)
-        .map(|value| value != &custom_model)
-        .unwrap_or(true)
-    {
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(true);
+    if dedicated_model_empty && !custom_model.trim().is_empty() {
         settings
             .post_process_models
             .insert(COHERE_PROVIDER_ID.to_string(), custom_model.clone());
@@ -1202,5 +1205,54 @@ mod tests {
         let migrated_once = serde_json::to_value(&settings).unwrap();
         assert!(!migrate_custom_cohere_provider(&mut settings));
         assert_eq!(serde_json::to_value(&settings).unwrap(), migrated_once);
+    }
+
+    #[test]
+    fn preserves_existing_dedicated_cohere_settings_during_migration() {
+        let mut settings = get_default_settings();
+        settings.post_process_provider_id = CUSTOM_PROVIDER_ID.to_string();
+        settings
+            .post_process_provider_mut(CUSTOM_PROVIDER_ID)
+            .expect("custom provider should exist")
+            .base_url = COHERE_DEFAULT_BASE_URL.to_string();
+        settings
+            .post_process_api_keys
+            .insert(CUSTOM_PROVIDER_ID.to_string(), "legacy-key".to_string());
+        settings
+            .post_process_models
+            .insert(CUSTOM_PROVIDER_ID.to_string(), "legacy-model".to_string());
+        settings
+            .post_process_api_keys
+            .insert(COHERE_PROVIDER_ID.to_string(), "dedicated-key".to_string());
+        settings.post_process_models.insert(
+            COHERE_PROVIDER_ID.to_string(),
+            "dedicated-model".to_string(),
+        );
+
+        assert!(migrate_custom_cohere_provider(&mut settings));
+        assert_eq!(settings.post_process_provider_id, COHERE_PROVIDER_ID);
+        assert_eq!(
+            settings.post_process_api_keys.get(COHERE_PROVIDER_ID),
+            Some(&"dedicated-key".to_string())
+        );
+        assert_eq!(
+            settings.post_process_models.get(COHERE_PROVIDER_ID),
+            Some(&"dedicated-model".to_string())
+        );
+        assert_eq!(
+            settings.post_process_api_keys.get(CUSTOM_PROVIDER_ID),
+            Some(&String::new())
+        );
+        assert_eq!(
+            settings.post_process_models.get(CUSTOM_PROVIDER_ID),
+            Some(&String::new())
+        );
+        assert_eq!(
+            settings
+                .post_process_provider(CUSTOM_PROVIDER_ID)
+                .expect("custom provider should still exist")
+                .base_url,
+            CUSTOM_PROVIDER_DEFAULT_BASE_URL
+        );
     }
 }

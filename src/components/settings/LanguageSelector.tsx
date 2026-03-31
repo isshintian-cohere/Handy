@@ -10,6 +10,7 @@ interface LanguageSelectorProps {
   grouped?: boolean;
   supportedLanguages?: string[];
   supportsAutoDetect?: boolean;
+  fallbackLanguage?: string;
 }
 
 export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
@@ -17,6 +18,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   grouped = false,
   supportedLanguages,
   supportsAutoDetect = true,
+  fallbackLanguage,
 }) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, resetSetting, isUpdating } = useSettings();
@@ -26,9 +28,13 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const selectedLanguage = getSetting("selected_language") || "auto";
+  const normalizedFallbackLanguage =
+    fallbackLanguage ??
+    supportedLanguages?.find((language) => language !== "auto") ??
+    "auto";
   const effectiveSelectedLanguage =
     !supportsAutoDetect && selectedLanguage === "auto"
-      ? "en"
+      ? normalizedFallbackLanguage
       : selectedLanguage;
 
   useEffect(() => {

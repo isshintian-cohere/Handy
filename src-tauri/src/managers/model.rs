@@ -50,7 +50,7 @@ pub struct ModelInfo {
     pub is_recommended: bool,       // Whether this is the recommended model for new users
     pub supported_languages: Vec<String>, // Languages this model can transcribe
     pub supports_language_selection: bool, // Whether the user can explicitly pick a language
-    pub is_custom: bool,      // Whether this is a user-provided custom model
+    pub is_custom: bool,            // Whether this is a user-provided custom model
 }
 
 impl ModelInfo {
@@ -608,7 +608,7 @@ impl ModelManager {
             },
         );
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         available_models.insert(
             cohere_transcribe::COHERE_MODEL_ID.to_string(),
             ModelInfo {
@@ -628,7 +628,7 @@ impl ModelManager {
                 accuracy_score: 0.95,
                 speed_score: 0.95,
                 supports_translation: false,
-                is_recommended: true,
+                is_recommended: false,
                 supported_languages: cohere_transcribe::supported_languages(),
                 supports_language_selection: true,
                 is_custom: false,
